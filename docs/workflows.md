@@ -223,6 +223,48 @@ Copy item is an error; run `shelfbox repo repair` before a content mutation.
 
 ---
 
+# Convert a Materialization Strategy
+
+Use an explicit conversion when an existing item should change between a
+symlink and a regular Copy. Changing `materialization` configuration alone
+does not convert existing items.
+
+```sh
+shelfbox item materialize .env --strategy copy
+shelfbox item materialize .env --strategy symlink
+```
+
+The old entry remains in place until a validated replacement is ready. A
+diverged regular copy must be synchronized explicitly before converting it to
+a symlink.
+
+For all attached items, preview and then execute the corresponding batch:
+
+```sh
+shelfbox repo materialize --strategy copy --dry-run
+shelfbox repo materialize --strategy copy
+```
+
+---
+
+# Synchronize a Repository Batch
+
+Review all attached items without writing, then choose a source of truth for
+the batch:
+
+```sh
+shelfbox repo sync --from store --dry-run
+shelfbox repo sync --from store
+shelfbox repo sync --from repo --yes
+```
+
+`--from repo` can replace canonical store data and therefore requires `--yes`
+when any item would change. The batch validates every item before its first
+write. If an execution-time race occurs later, it stops and reports the
+completed items rather than continuing into unvalidated state.
+
+---
+
 # PC Migration or Store Restore
 
 When `repos/` has been restored on another machine or into a fresh store:

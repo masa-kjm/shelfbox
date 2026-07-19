@@ -16,6 +16,10 @@ pub use crate::{
     },
     plan::{
         item_add::{ItemAddPlan, ItemAddReport},
+        item_materialize::{
+            ItemMaterializeAction, ItemMaterializePlan, ItemMaterializeReport,
+            ItemMaterializeRequest, MaterializeOutcome,
+        },
         item_move::{ItemMovePlan, ItemMoveReport, ItemMoveWarning},
         item_relink::{ItemRelinkPlan, ItemRelinkReport},
         item_repair::{ItemRepairReport, RepairOutcome},
@@ -35,9 +39,9 @@ use crate::{
     ignore::{GitInfoExclude, IgnoreBackend},
     link::DefaultLinkStrategy,
     ops::{
-        add, info as info_ops, list as list_ops, move_item as move_item_ops, path as path_ops,
-        relink as relink_ops, repair as repair_ops, restore, status as status_ops,
-        sync as sync_ops,
+        add, info as info_ops, list as list_ops, materialize as materialize_ops,
+        move_item as move_item_ops, path as path_ops, relink as relink_ops, repair as repair_ops,
+        restore, status as status_ops, sync as sync_ops,
     },
 };
 
@@ -143,6 +147,17 @@ pub fn repair(
 ) -> Result<ItemRepairReport> {
     let link = DefaultLinkStrategy;
     repair_ops::repair_report(ctx, abs_path, &link, dry_run, force)
+}
+
+/// Explicitly converts one existing healthy materialization to `strategy`.
+/// This never changes the item manifest or ownership state.
+pub fn materialize(
+    ctx: &RepoContext,
+    abs_path: &Path,
+    request: ItemMaterializeRequest,
+) -> Result<ItemMaterializeReport> {
+    let ignore = GitInfoExclude;
+    materialize_ops::materialize_report(ctx, abs_path, request, &ignore)
 }
 
 /// Explicitly synchronizes one attached regular Copy in the requested

@@ -76,7 +76,7 @@ pub(crate) fn sync_report(
     })
 }
 
-fn build_sync_plan(
+pub(crate) fn build_sync_plan(
     ctx: &RepoContext,
     abs_path: &Path,
     direction: SyncDirection,
@@ -208,7 +208,7 @@ fn materialization_location(
     Ok(MaterializationLocation::new(repo_path, store_path))
 }
 
-fn dry_run_outcome(action: ItemSyncAction) -> SyncOutcome {
+pub(crate) fn dry_run_outcome(action: ItemSyncAction) -> SyncOutcome {
     match action {
         ItemSyncAction::AlreadySynchronized => SyncOutcome::AlreadySynchronized,
         ItemSyncAction::ManagedSymlinkNoOp => SyncOutcome::ManagedSymlinkNoOp,
@@ -217,7 +217,7 @@ fn dry_run_outcome(action: ItemSyncAction) -> SyncOutcome {
     }
 }
 
-fn execute_sync_plan(
+pub(crate) fn execute_sync_plan(
     ctx: &mut RepoContext,
     plan: &ItemSyncPlan,
     ignore: &dyn IgnoreBackend,

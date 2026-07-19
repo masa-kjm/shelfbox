@@ -168,6 +168,60 @@ materialization counts report what would be repaired without writing files.
 
 ---
 
+### `repo sync --from <store|repo>`
+
+Synchronizes the current repository's attached items by reusing the exact
+item-level sync policy for every target.
+
+```sh
+shelfbox repo sync --from store
+shelfbox repo sync --from repo --yes
+```
+
+Before the first write, shelfbox validates the complete attached-item set in
+lexical path order. A validation failure (for example a tracked path, missing
+exclude, unsafe entry, or diverged target that the selected direction cannot
+use) performs no writes. Managed symlinks are reported as no-op because they
+already read canonical store content. Detached items are outside this batch.
+
+For `--from repo`, `--yes` is required only if at least one regular copy would
+replace canonical store content. Use `--dry-run` to review the full target
+list without writing. After initial validation succeeds, an execution-time
+race or I/O failure stops the ordered batch; completed earlier items and the
+failing path are reported, and later items are not written.
+
+| Flag | Description |
+|---|---|
+| `--from <store|repo>` | Required source of truth for this batch. |
+| `--dry-run` | Print every item decision without writing. |
+| `--yes` | Required with `--from repo` when the batch would update canonical content. |
+
+---
+
+### `repo materialize --strategy <symlink|copy>`
+
+Converts every attached healthy materialization to one explicit strategy using
+the same validation and atomic replacement protocol as `item materialize`.
+
+```sh
+shelfbox repo materialize --strategy copy
+shelfbox repo materialize --strategy symlink --dry-run
+```
+
+All attached items are planned before the first write. A single invalid,
+diverged, tracked, exclude-missing, hardlinked, or otherwise unsafe item
+rejects the batch without changing any item. After validation, execution is
+ordered and stops at the first runtime failure with a partial progress report.
+Detached items are deliberately not included; use `item materialize <PATH>`
+when converting a detached materialization is intentional.
+
+| Flag | Description |
+|---|---|
+| `--strategy <symlink|copy>` | Required target strategy for every attached item. |
+| `--dry-run` | Print every item decision without writing. |
+
+---
+
 ### `repo gc`
 
 `repo gc` is retained only for current-repository orphan inspection. It lists

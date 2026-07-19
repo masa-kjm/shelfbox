@@ -286,6 +286,76 @@ fn copy_materialization_is_available_through_config_and_item_paths() {
 }
 
 #[test]
+fn v091_materialize_and_repo_batch_dry_runs_are_explicit_and_mutation_free() {
+    let fixture = CliFixture::new();
+    fixture.write_config("materialization = \"copy\"\n");
+    let repo = common::init_git_repo();
+    let store = TempDir::new().unwrap();
+    let item = repo.path().join("secret.txt");
+    std::fs::write(&item, "canonical").unwrap();
+
+    fixture
+        .run(
+            repo.path(),
+            store_args(store.path(), ["item", "add", "secret.txt"]),
+        )
+        .assert_success();
+    let before_store = snapshot_tree(store.path());
+
+    let item_no_op = fixture.run(
+        repo.path(),
+        store_args(
+            store.path(),
+            [
+                "item",
+                "materialize",
+                "secret.txt",
+                "--strategy",
+                "copy",
+                "--dry-run",
+            ],
+        ),
+    );
+    item_no_op.assert_success();
+    assert_eq!(
+        item_no_op.stdout,
+        "ok (already materialized as copy): secret.txt\n"
+    );
+
+    std::fs::write(&item, "local edit").unwrap();
+    let repo_after_edit = snapshot_tree(repo.path());
+    let sync_dry_run = fixture.run(
+        repo.path(),
+        store_args(
+            store.path(),
+            ["repo", "sync", "--from", "store", "--dry-run"],
+        ),
+    );
+    sync_dry_run.assert_success();
+    assert_eq!(
+        sync_dry_run.stdout,
+        "[dry-run] would synchronize from store: secret.txt\n"
+    );
+    assert_eq!(std::fs::read_to_string(&item).unwrap(), "local edit");
+
+    let materialize_dry_run = fixture.run(
+        repo.path(),
+        store_args(
+            store.path(),
+            ["repo", "materialize", "--strategy", "copy", "--dry-run"],
+        ),
+    );
+    materialize_dry_run.assert_success();
+    assert_eq!(
+        materialize_dry_run.stdout,
+        "[dry-run] already materialized as copy: secret.txt\n"
+    );
+    assert_eq!(snapshot_tree(store.path()), before_store);
+    assert_eq!(snapshot_tree(repo.path()), repo_after_edit);
+    assert_eq!(std::fs::read_to_string(&item).unwrap(), "local edit");
+}
+
+#[test]
 fn store_rebuild_index_dry_run_reports_without_writing_index() {
     let fixture = CliFixture::new();
     let cwd = TempDir::new().unwrap();

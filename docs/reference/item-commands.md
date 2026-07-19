@@ -176,6 +176,42 @@ silently changing content.
 
 ---
 
+### `item materialize <PATH>... --strategy <symlink|copy>`
+
+Converts an existing healthy materialization without changing its manifest
+identity or ownership state.
+
+```sh
+shelfbox item materialize .env --strategy copy
+shelfbox item materialize .env --strategy symlink
+```
+
+The operation accepts a managed symlink or an isolated equal regular copy. It
+prepares and validates the replacement in the same directory, then atomically
+installs it; it never removes the old materialization first. A copy conversion
+uses the same durable temporary-file and exact Git-exclude protocol as other
+Copy mutations.
+
+An equal copy can become a symlink. A diverged copy cannot become a symlink
+until an explicit `item sync --from store` or `item sync --from repo --yes`
+resolves which content is canonical. Requesting the strategy already observed
+is a no-op, including for a diverged copy; it never resolves content.
+
+The command rejects tracked paths, missing excludes, missing store entries,
+hardlinks, and unexpected filesystem entries. The configured
+`materialization` value is not consulted as a desired state.
+
+| Flag | Description |
+|---|---|
+| `--strategy <symlink|copy>` | Required target strategy. |
+| `--dry-run` | Print the approved atomic replacement without writing. |
+
+`restore --keep-store` remains the v0.9.1-compatible detach spelling. Use
+`item materialize` when strategy conversion, rather than ownership detachment,
+is intended.
+
+---
+
 ### `item move <OLD> <NEW>`
 
 Renames a shelved item's tracked path without restoring and re-shelving it.

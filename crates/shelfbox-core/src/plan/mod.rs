@@ -5,13 +5,16 @@
 //! same shape to callers for presentation.
 
 pub mod item_add;
+pub mod item_materialize;
 pub mod item_move;
 pub mod item_relink;
 pub mod item_repair;
 pub mod item_restore;
 pub mod item_sync;
 pub mod manifest_migration;
+pub mod repo_materialize;
 pub mod repo_reclaim;
 pub mod repo_repair;
+pub mod repo_sync;
 pub mod store_gc;
 pub mod store_rebuild_index;

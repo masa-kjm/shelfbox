@@ -48,6 +48,7 @@ Reference for:
 * `item restore`
 * `item repair`
 * `item sync`
+* `item materialize`
 * `item relink`
 * `item move`
 * `item list`
@@ -62,6 +63,8 @@ Reference for:
 * `repo status`
 * `repo reclaim`
 * `repo repair`
+* `repo sync`
+* `repo materialize`
 * `repo gc`
 
 ### [Store Commands](./reference/store-commands.md)

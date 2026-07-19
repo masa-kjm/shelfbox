@@ -21,8 +21,13 @@ use shelfbox_core::{
     link::{DefaultLinkStrategy, LinkStrategy},
     ops,
     ops::integrity::FixResult,
+    plan::item_materialize::{ItemMaterializeRequest, MaterializeOutcome},
     plan::item_restore::ItemRestoreAction,
     plan::repo_repair::RepoRepairSymlinkAction,
+    plan::{
+        item_sync::SyncDirection, repo_materialize::RepoMaterializeRequest,
+        repo_sync::RepoSyncRequest,
+    },
     storage::operation_record_store,
     store,
 };
@@ -291,6 +296,274 @@ fn add_copy_creates_independent_regular_materialization() {
         std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&store_path).unwrap()),
         "copy materialization must not be a hardlink"
     );
+}
+
+#[test]
+fn item_materialize_converts_only_equal_materializations_and_preserves_manifest() {
+    if !require_symlink_support() {
+        return;
+    }
+
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let file_path = repo_dir.path().join("convert.txt");
+    std::fs::write(&file_path, "canonical").unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    let manifest_before = serde_json::to_string(&ctx.manifest).unwrap();
+
+    let to_copy = ops::materialize::materialize_report(
+        &ctx,
+        &file_path,
+        ItemMaterializeRequest {
+            strategy: MaterializationStrategy::Copy,
+            dry_run: false,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert_eq!(to_copy.outcome, MaterializeOutcome::Materialized);
+    assert!(file_path.symlink_metadata().unwrap().is_file());
+    assert!(!file_path
+        .symlink_metadata()
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "canonical");
+    assert_eq!(
+        serde_json::to_string(&ctx.manifest).unwrap(),
+        manifest_before
+    );
+
+    let to_link = ops::materialize::materialize_report(
+        &ctx,
+        &file_path,
+        ItemMaterializeRequest {
+            strategy: MaterializationStrategy::Symlink,
+            dry_run: false,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert_eq!(to_link.outcome, MaterializeOutcome::Materialized);
+    assert!(file_path
+        .symlink_metadata()
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        serde_json::to_string(&ctx.manifest).unwrap(),
+        manifest_before
+    );
+
+    let no_op = ops::materialize::materialize_report(
+        &ctx,
+        &file_path,
+        ItemMaterializeRequest {
+            strategy: MaterializationStrategy::Symlink,
+            dry_run: false,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert_eq!(no_op.outcome, MaterializeOutcome::AlreadyMaterialized);
+}
+
+#[test]
+fn item_materialize_dry_run_is_mutation_free_and_diverged_copy_requires_sync() {
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let file_path = repo_dir.path().join("copy-convert.txt");
+    std::fs::write(&file_path, "canonical").unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    ctx.config.materialization = MaterializationStrategy::Copy;
+    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+
+    let repo_before = common::snapshot_tree(repo_dir.path());
+    let store_before = common::snapshot_tree(store_dir.path());
+    let dry_run = ops::materialize::materialize_report(
+        &ctx,
+        &file_path,
+        ItemMaterializeRequest {
+            strategy: MaterializationStrategy::Symlink,
+            dry_run: true,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert_eq!(dry_run.outcome, MaterializeOutcome::WouldMaterialize);
+    assert_eq!(common::snapshot_tree(repo_dir.path()), repo_before);
+    assert_eq!(common::snapshot_tree(store_dir.path()), store_before);
+
+    std::fs::write(&file_path, "local edit").unwrap();
+    assert!(matches!(
+        ops::materialize::materialize_report(
+            &ctx,
+            &file_path,
+            ItemMaterializeRequest {
+                strategy: MaterializationStrategy::Symlink,
+                dry_run: false,
+            },
+            &ignore,
+        ),
+        Err(AppError::ContentDivergedRequiresSync { .. })
+    ));
+    assert!(file_path.symlink_metadata().unwrap().is_file());
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "local edit");
+}
+
+#[test]
+fn repo_sync_validates_every_attached_item_before_any_write() {
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let first = repo_dir.path().join("first.txt");
+    let second = repo_dir.path().join("second.txt");
+    std::fs::write(&first, "first canonical").unwrap();
+    std::fs::write(&second, "second canonical").unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    ctx.config.materialization = MaterializationStrategy::Copy;
+    ops::add::add_report(&mut ctx, &first, false, &link, &ignore).unwrap();
+    ops::add::add_report(&mut ctx, &second, false, &link, &ignore).unwrap();
+    std::fs::write(&first, "first local edit").unwrap();
+    common::run_git(repo_dir.path(), &["add", "-f", "second.txt"]);
+
+    assert!(matches!(
+        ops::repo_sync::sync_repo_report(
+            &mut ctx,
+            RepoSyncRequest {
+                direction: SyncDirection::FromStore,
+                dry_run: false,
+                confirmed: false,
+            },
+            &ignore,
+        ),
+        Err(AppError::PathIsTracked { path }) if path == second
+    ));
+    assert_eq!(std::fs::read_to_string(&first).unwrap(), "first local edit");
+}
+
+#[test]
+fn repo_sync_and_materialize_reuse_item_level_plans() {
+    if !require_symlink_support() {
+        return;
+    }
+
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let first = repo_dir.path().join("first.txt");
+    let second = repo_dir.path().join("second.txt");
+    std::fs::write(&first, "first canonical").unwrap();
+    std::fs::write(&second, "second canonical").unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    // Preserve a symlink item while creating a second Copy item. Repo-level
+    // orchestration must classify observed strategies independently rather
+    // than applying the current config retroactively.
+    ops::add::add_report(&mut ctx, &first, false, &link, &ignore).unwrap();
+    ctx.config.materialization = MaterializationStrategy::Copy;
+    ops::add::add_report(&mut ctx, &second, false, &link, &ignore).unwrap();
+    assert!(first.symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(!second.symlink_metadata().unwrap().file_type().is_symlink());
+    std::fs::write(&second, "second local edit").unwrap();
+
+    let synced = ops::repo_sync::sync_repo_report(
+        &mut ctx,
+        RepoSyncRequest {
+            direction: SyncDirection::FromStore,
+            dry_run: false,
+            confirmed: false,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert!(!synced.halted);
+    assert_eq!(synced.items.len(), 2);
+    assert_eq!(
+        synced.items[0].outcome,
+        Some(crate::plan::item_sync::SyncOutcome::ManagedSymlinkNoOp)
+    );
+    assert_eq!(
+        synced.items[1].outcome,
+        Some(crate::plan::item_sync::SyncOutcome::SynchronizedFromStore)
+    );
+    assert_eq!(std::fs::read_to_string(&first).unwrap(), "first canonical");
+    assert_eq!(
+        std::fs::read_to_string(&second).unwrap(),
+        "second canonical"
+    );
+
+    let materialized = ops::repo_materialize::materialize_repo_report(
+        &ctx,
+        RepoMaterializeRequest {
+            strategy: MaterializationStrategy::Symlink,
+            dry_run: false,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert!(!materialized.halted);
+    assert_eq!(materialized.items.len(), 2);
+    assert!(first.symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(second.symlink_metadata().unwrap().file_type().is_symlink());
+}
+
+#[test]
+fn repo_batches_reject_confirmation_and_invalid_conversion_before_writes() {
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let first = repo_dir.path().join("first.txt");
+    let second = repo_dir.path().join("second.txt");
+    std::fs::write(&first, "first canonical").unwrap();
+    std::fs::write(&second, "second canonical").unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    ctx.config.materialization = MaterializationStrategy::Copy;
+    ops::add::add_report(&mut ctx, &first, false, &link, &ignore).unwrap();
+    ops::add::add_report(&mut ctx, &second, false, &link, &ignore).unwrap();
+
+    std::fs::write(&first, "first local edit").unwrap();
+    assert!(matches!(
+        ops::repo_sync::sync_repo_report(
+            &mut ctx,
+            RepoSyncRequest {
+                direction: SyncDirection::FromRepo,
+                dry_run: false,
+                confirmed: false,
+            },
+            &ignore,
+        ),
+        Err(AppError::SyncConfirmationRequired)
+    ));
+    assert_eq!(
+        std::fs::read_to_string(ctx.repo_store.join("items/first.txt")).unwrap(),
+        "first canonical"
+    );
+
+    std::fs::write(&first, "first canonical").unwrap();
+    std::fs::write(&second, "second local edit").unwrap();
+    assert!(matches!(
+        ops::repo_materialize::materialize_repo_report(
+            &ctx,
+            RepoMaterializeRequest {
+                strategy: MaterializationStrategy::Symlink,
+                dry_run: false,
+            },
+            &ignore,
+        ),
+        Err(AppError::ContentDivergedRequiresSync { path }) if path == second
+    ));
+    // The lexically first item is eligible for conversion, but planning the
+    // second diverged item rejects the complete batch before the first write.
+    assert!(!first.symlink_metadata().unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read_to_string(&first).unwrap(), "first canonical");
 }
 
 #[test]

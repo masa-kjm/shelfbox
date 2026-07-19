@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.9.1
+
+- Added `item materialize --strategy symlink|copy` for explicit, atomic conversion of a healthy item materialization. Conversion never changes manifest identity or ownership, and a diverged copy must be synchronized explicitly first.
+- Added `repo sync --from store|repo` and `repo materialize --strategy symlink|copy`. Both validate every attached target before the first write; a runtime failure stops the ordered batch and reports completed items.
+
 ## v0.9.0
 
 - Added public Copy materialization mode through `materialization = "copy"`.

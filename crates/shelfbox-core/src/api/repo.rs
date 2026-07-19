@@ -14,10 +14,17 @@ pub use crate::{
             StatusSchemaVersion, StatusSeverity, STATUS_SCHEMA_VERSION_V2,
         },
     },
+    plan::item_materialize::MaterializeOutcome,
+    plan::item_sync::{SyncDirection, SyncOutcome},
+    plan::repo_materialize::{
+        RepoMaterializeItemReport, RepoMaterializePlan, RepoMaterializeReport,
+        RepoMaterializeRequest,
+    },
     plan::repo_reclaim::{CandidateState, ReclaimCandidate, ReclaimOutcome, ReclaimPlan},
     plan::repo_repair::{
         RepairRepoReport, RepoRepairAction, RepoRepairPlan, RepoRepairSymlinkAction,
     },
+    plan::repo_sync::{RepoSyncItemReport, RepoSyncPlan, RepoSyncReport, RepoSyncRequest},
     store::{
         index::{Index, RepoEntry},
         manifest::{Manifest, OwnershipState},
@@ -30,7 +37,7 @@ use crate::{
     error::Result,
     ignore::GitInfoExclude,
     link::DefaultLinkStrategy,
-    ops::{detect_transitions, integrity, reclaim, repair},
+    ops::{detect_transitions, integrity, reclaim, repair, repo_materialize, repo_sync},
     store::{index, manifest},
 };
 
@@ -100,6 +107,25 @@ pub fn scan_transitions(ctx: &RepoContext, config: &Config) -> Result<Transition
 pub fn repair_repo(ctx: &mut RepoContext, dry_run: bool, force: bool) -> Result<RepairRepoReport> {
     let link = DefaultLinkStrategy;
     repair::repair_repo(ctx, &link, dry_run, force)
+}
+
+/// Synchronizes every attached item after validating the complete batch.
+/// Runtime races stop the ordered batch and are represented in the returned
+/// report; initial validation failures return an error before any writes.
+pub fn sync_repo(ctx: &mut RepoContext, request: RepoSyncRequest) -> Result<RepoSyncReport> {
+    let ignore = GitInfoExclude;
+    repo_sync::sync_repo_report(ctx, request, &ignore)
+}
+
+/// Converts every attached healthy materialization after validating the full
+/// batch. Detached items are intentionally excluded; convert one explicitly
+/// with `item materialize` when that lifecycle state is desired.
+pub fn materialize_repo(
+    ctx: &RepoContext,
+    request: RepoMaterializeRequest,
+) -> Result<RepoMaterializeReport> {
+    let ignore = GitInfoExclude;
+    repo_materialize::materialize_repo_report(ctx, request, &ignore)
 }
 
 pub fn check_reclaim_precondition(current_manifest: Option<&Manifest>) -> Result<()> {

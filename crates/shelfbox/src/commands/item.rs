@@ -79,6 +79,21 @@ pub enum ItemCommand {
         yes: bool,
     },
 
+    /// Convert one healthy materialization to an explicit strategy.
+    Materialize {
+        /// Files whose observed materialization should be converted.
+        #[arg(required = true, value_name = "PATH")]
+        paths: Vec<PathBuf>,
+
+        /// Strategy to materialize at the repository path.
+        #[arg(long, value_enum)]
+        strategy: MaterializationStrategyArg,
+
+        /// Print the approved replacement without changing the repository.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Re-attach a detached item while preserving its observed materialization.
     ///
     /// A detached item is one whose ownership was intentionally unlinked via
@@ -200,6 +215,16 @@ pub fn run_item(
             warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
+        ItemCommand::Materialize {
+            paths,
+            strategy,
+            dry_run,
+        } => {
+            preflight_mutation(store_override, "item materialize", dry_run)?;
+            cmd_materialize(cwd, store_override, &paths, strategy, dry_run)?;
+            warn_best_effort(store_override, dry_run)?;
+            Ok(ExitCode::SUCCESS)
+        }
         ItemCommand::Relink {
             paths,
             dry_run,
@@ -257,6 +282,24 @@ fn warn_best_effort(store_override: Option<&Path>, dry_run: bool) -> Result<()> 
 pub enum SyncFrom {
     Store,
     Repo,
+}
+
+/// CLI spelling for an explicit repository materialization strategy.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum MaterializationStrategyArg {
+    Symlink,
+    Copy,
+}
+
+impl From<MaterializationStrategyArg>
+    for shelfbox_core::domain::materialization::MaterializationStrategy
+{
+    fn from(value: MaterializationStrategyArg) -> Self {
+        match value {
+            MaterializationStrategyArg::Symlink => Self::Symlink,
+            MaterializationStrategyArg::Copy => Self::Copy,
+        }
+    }
 }
 
 /// CLI spelling for an explicit divergent detached-copy relink direction.
@@ -718,6 +761,52 @@ fn cmd_sync(
             }
             item::SyncOutcome::WouldSynchronizeFromStore
             | item::SyncOutcome::WouldSynchronizeFromRepo => unreachable!(),
+        }
+    }
+    Ok(())
+}
+
+fn cmd_materialize(
+    cwd: &Path,
+    store_override: Option<&Path>,
+    paths: &[PathBuf],
+    strategy: MaterializationStrategyArg,
+    dry_run: bool,
+) -> Result<()> {
+    let ctx = build_item_context(cwd, store_override, dry_run)?;
+    let strategy = strategy.into();
+
+    for path in paths {
+        let abs = resolve_path(cwd, path);
+        let report = item::materialize(
+            &ctx,
+            &abs,
+            item::ItemMaterializeRequest { strategy, dry_run },
+        )
+        .with_context(|| format!("materialize '{}' failed", path.display()))?;
+
+        match report.outcome {
+            item::MaterializeOutcome::Materialized => {
+                println!("materialized as {}: {}", strategy, path.display());
+            }
+            item::MaterializeOutcome::AlreadyMaterialized => {
+                println!(
+                    "ok (already materialized as {}): {}",
+                    strategy,
+                    path.display()
+                );
+            }
+            item::MaterializeOutcome::WouldMaterialize => {
+                println!(
+                    "[dry-run] materialize '{}' as {}",
+                    report.plan.path, strategy
+                );
+                println!(
+                    "  atomically replace {} from {}",
+                    report.plan.abs_path.display(),
+                    report.plan.store_path.display()
+                );
+            }
         }
     }
     Ok(())

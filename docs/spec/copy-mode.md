@@ -590,9 +590,12 @@ Do not reduce its existing scope.
 11. Updated CLI text/JSON reports, exit codes, documentation, and migration notes
 12. Failpoint, cross-device, and platform-specific integration tests
 
-## Deferred to v0.9.1
+## v0.9.1 follow-up completion
 
-`item materialize` and repo-level operations are separated from v0.9.0 scope, but will be implemented in v0.9.1 as follow-up features that complete copy-mode operation.
+v0.9.1 adds explicit strategy conversion and repo-level orchestration while
+preserving the v0.9.0 policy and safety invariants. The commands below are
+implemented; the v0.9.1-specific batch contract is normative for these
+operations.
 
 ### `item materialize`
 
@@ -603,8 +606,8 @@ shelfbox item materialize <PATH> --strategy copy [--dry-run]
 shelfbox item materialize <PATH> --strategy symlink [--dry-run]
 ```
 
-* Symlink -> copy: create a temp copy from the store.
-* Equal copy -> symlink: create a temp symlink.
+* Symlink -> copy: create a durable, excluded temp copy from the store.
+* Equal copy -> symlink: create and validate a replacement symlink.
 * Diverged copy -> symlink: reject and require `item sync` with explicit direction first.
 * If target strategy matches observed materialization, no-op.
 * Do not change manifest identity or `ownership_state`.
@@ -625,7 +628,13 @@ On POSIX, use rename without following the target. Encapsulate Windows replaceme
 * `repo sync --from store|repo`
 * `repo materialize --strategy symlink|copy`
 * Reuse item-level operation conflict policy, reports, and recovery.
-* For `--from repo`, show the target list first and require `--yes` for actual writes.
+* Validate the complete attached target set before the first write and require
+  `--yes` for actual `--from repo` writes. `--dry-run` reports the full target
+  list without writing.
+* Execute validated items in lexical order. Stop at the first execution-time
+  failure and report completed earlier items; never write later items.
+* Detached items remain outside repo batches and require an explicit item-level
+  operation.
 
 ### Performance and schema
 
@@ -638,7 +647,7 @@ The following are not committed v0.9.1 deliverables. Reassess their necessity us
 
 ### Re-evaluate the detach lifecycle
 
-For compatibility, v0.9.0 preserves `restore --keep-store` as a legacy detach operation. In v0.9.1, evaluate usage and migration cost and compare:
+For compatibility, v0.9.0 preserves `restore --keep-store` as a legacy detach operation. The v0.9.1 review found no recorded workflow or support evidence that justified a new spelling or semantic change, so v0.9.1 keeps that command as-is and does not add `item detach`. Re-evaluate in a future release when such evidence exists, comparing:
 
 * preserving the current name and semantics while clarifying documentation only
 * adding `item detach` with the same semantics and gradually deprecating `restore --keep-store` as a compatibility alias

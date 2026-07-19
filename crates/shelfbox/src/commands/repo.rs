@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 use serde::Serialize;
 use shelfbox_core::api::repo;
 
@@ -46,6 +46,32 @@ pub enum RepoCommand {
         force: bool,
     },
 
+    /// Synchronize all attached materializations in one explicit direction.
+    Sync {
+        /// Select the only source of truth for this batch.
+        #[arg(long, value_enum)]
+        from: RepoSyncFrom,
+
+        /// Print every approved item action without writing either endpoint.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Required before any repository item may replace canonical content.
+        #[arg(long)]
+        yes: bool,
+    },
+
+    /// Convert all attached healthy materializations to one explicit strategy.
+    Materialize {
+        /// Strategy to materialize at each attached repository path.
+        #[arg(long, value_enum)]
+        strategy: RepoMaterializationStrategy,
+
+        /// Print every approved replacement without changing the repository.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Inspect current-repository store files not referenced by the manifest.
     Gc {
         /// Print inspection output without making any changes.
@@ -86,6 +112,18 @@ pub fn run_repo(
             warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
+        RepoCommand::Sync { from, dry_run, yes } => {
+            preflight_mutation(store_override, "repo sync", dry_run)?;
+            let exit = cmd_repo_sync(cwd, store_override, from, dry_run, yes)?;
+            warn_best_effort(store_override, dry_run)?;
+            Ok(exit)
+        }
+        RepoCommand::Materialize { strategy, dry_run } => {
+            preflight_mutation(store_override, "repo materialize", dry_run)?;
+            let exit = cmd_repo_materialize(cwd, store_override, strategy, dry_run)?;
+            warn_best_effort(store_override, dry_run)?;
+            Ok(exit)
+        }
         RepoCommand::Gc { dry_run, yes } => {
             cmd_repo_gc(cwd, store_override, dry_run, yes)?;
             Ok(ExitCode::SUCCESS)
@@ -116,6 +154,36 @@ fn warn_best_effort(store_override: Option<&Path>, dry_run: bool) -> Result<()> 
         );
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum RepoSyncFrom {
+    Store,
+    Repo,
+}
+
+impl From<RepoSyncFrom> for repo::SyncDirection {
+    fn from(value: RepoSyncFrom) -> Self {
+        match value {
+            RepoSyncFrom::Store => Self::FromStore,
+            RepoSyncFrom::Repo => Self::FromRepo,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum RepoMaterializationStrategy {
+    Symlink,
+    Copy,
+}
+
+impl From<RepoMaterializationStrategy> for repo::MaterializationStrategy {
+    fn from(value: RepoMaterializationStrategy) -> Self {
+        match value {
+            RepoMaterializationStrategy::Symlink => Self::Symlink,
+            RepoMaterializationStrategy::Copy => Self::Copy,
+        }
+    }
 }
 
 // ── Subcommand handlers ─────────────────────────────────────────────────────────────────────────
@@ -336,6 +404,79 @@ fn cmd_repo_repair(
     Ok(())
 }
 
+fn associated_repo_context(
+    cwd: &Path,
+    store_override: Option<&Path>,
+    dry_run: bool,
+) -> Result<repo::RepoContext> {
+    let config = repo::load_config(store_override).context("failed to load config")?;
+    let current =
+        repo::current_git_context(cwd).context("failed to inspect current git repository")?;
+    let idx = repo::load_index(&config.store).context("failed to load store index")?;
+    let associated_repo_id = repo::resolve_existing_repo(&current, &idx)
+        .ok_or_else(|| anyhow::anyhow!("Run `shelfbox repo reclaim` first"))?;
+    let ctx = if dry_run {
+        let read_only = repo::build_read_only(cwd, store_override)
+            .context("failed to initialise read-only repo context")?;
+        read_only
+            .repo
+            .ok_or_else(|| anyhow::anyhow!("Run `shelfbox repo reclaim` first"))?
+    } else {
+        repo::build_create_or_load(cwd, store_override)
+            .context("failed to initialise repo context")?
+    };
+    if ctx.repo_id != associated_repo_id {
+        anyhow::bail!("Run `shelfbox repo reclaim` first");
+    }
+    Ok(ctx)
+}
+
+fn cmd_repo_sync(
+    cwd: &Path,
+    store_override: Option<&Path>,
+    from: RepoSyncFrom,
+    dry_run: bool,
+    yes: bool,
+) -> Result<ExitCode> {
+    let mut ctx = associated_repo_context(cwd, store_override, dry_run)?;
+    let report = repo::sync_repo(
+        &mut ctx,
+        repo::RepoSyncRequest {
+            direction: from.into(),
+            dry_run,
+            confirmed: yes,
+        },
+    )?;
+    print_repo_sync_report(&report);
+    Ok(if report.has_failures() {
+        ExitCode::from(2)
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
+fn cmd_repo_materialize(
+    cwd: &Path,
+    store_override: Option<&Path>,
+    strategy: RepoMaterializationStrategy,
+    dry_run: bool,
+) -> Result<ExitCode> {
+    let ctx = associated_repo_context(cwd, store_override, dry_run)?;
+    let report = repo::materialize_repo(
+        &ctx,
+        repo::RepoMaterializeRequest {
+            strategy: strategy.into(),
+            dry_run,
+        },
+    )?;
+    print_repo_materialize_report(&report);
+    Ok(if report.has_failures() {
+        ExitCode::from(2)
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
 fn cmd_repo_gc(cwd: &Path, store_override: Option<&Path>, dry_run: bool, yes: bool) -> Result<()> {
     let read_only = repo::build_read_only(cwd, store_override)
         .context("failed to initialise read-only repo context")?;
@@ -457,6 +598,49 @@ fn cmd_repo_reclaim(
 }
 
 // ── Human-readable formatters ───────────────────────────────────────────────────────────────────
+
+fn print_repo_sync_report(report: &repo::RepoSyncReport) {
+    let mode = if report.dry_run { "[dry-run] " } else { "" };
+    for item in &report.items {
+        if let Some(outcome) = item.outcome {
+            let label = match outcome {
+                repo::SyncOutcome::AlreadySynchronized => "already synchronized",
+                repo::SyncOutcome::ManagedSymlinkNoOp => "managed symlink (no content write)",
+                repo::SyncOutcome::SynchronizedFromStore => "synchronized from store",
+                repo::SyncOutcome::SynchronizedFromRepo => "synchronized from repo",
+                repo::SyncOutcome::WouldSynchronizeFromStore => "would synchronize from store",
+                repo::SyncOutcome::WouldSynchronizeFromRepo => "would synchronize from repo",
+            };
+            println!("{mode}{label}: {}", item.path);
+        }
+        if let Some(error) = &item.error {
+            eprintln!("error: repo sync halted at {}: {error}", item.path);
+        }
+    }
+    if report.halted {
+        eprintln!("repo sync stopped after the first execution-time failure; later items were not written");
+    }
+}
+
+fn print_repo_materialize_report(report: &repo::RepoMaterializeReport) {
+    let mode = if report.dry_run { "[dry-run] " } else { "" };
+    for item in &report.items {
+        if let Some(outcome) = item.outcome {
+            let label = match outcome {
+                repo::MaterializeOutcome::AlreadyMaterialized => "already materialized",
+                repo::MaterializeOutcome::Materialized => "materialized",
+                repo::MaterializeOutcome::WouldMaterialize => "would materialize",
+            };
+            println!("{mode}{label} as {}: {}", report.plan.strategy, item.path);
+        }
+        if let Some(error) = &item.error {
+            eprintln!("error: repo materialize halted at {}: {error}", item.path);
+        }
+    }
+    if report.halted {
+        eprintln!("repo materialize stopped after the first execution-time failure; later items were not written");
+    }
+}
 
 fn print_reclaim_candidates(candidates: &[repo::ReclaimCandidate]) {
     println!("Reclaim candidates:");
