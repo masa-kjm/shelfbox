@@ -1,0 +1,38 @@
+services:
+  verify:
+    build:
+      context: ..
+      dockerfile: demo/Dockerfile
+      target: verify
+    command: ["bash", "-l"]
+    working_dir: /demo
+    user: "${DEMO_UID:-1000}:${DEMO_GID:-1000}"
+    environment:
+      HOME: /tmp/home
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      NO_COLOR: "1"
+      TZ: UTC
+    volumes:
+      - .:/demo
+    stdin_open: true
+    tty: true
+
+  record:
+    build:
+      context: ..
+      dockerfile: demo/Dockerfile
+      target: record
+    command: ["/demo/readme.tape"]
+    working_dir: /demo
+    user: "${DEMO_UID:-1000}:${DEMO_GID:-1000}"
+    environment:
+      HOME: /tmp/home
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      NO_COLOR: "1"
+      TZ: UTC
+    volumes:
+      - .:/demo
+    stdin_open: true
+    tty: true
