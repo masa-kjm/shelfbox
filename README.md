@@ -24,7 +24,7 @@ shelfbox item restore CLAUDE.local.md
 
 ## Why shelfbox
 
-Some files need to live in your repo tree so your editor and tools can find them, but they must never be committed. shelfbox keeps them visible in your editor, stores the canonical content elsewhere, and keeps Git out of the way:
+Some files need to stay in your repository tree so editors and tools can discover them, but they must never be committed. shelfbox separates those concerns: files remain visible at their original paths, canonical content is stored outside the repo, and Git stays out of the way.
 
 | File | Why shelve it |
 |---|---|
@@ -33,14 +33,12 @@ Some files need to live in your repo tree so your editor and tools can find them
 | `config/local.yml` | Machine-specific config overrides |
 | `.env` | Local secrets and credentials |
 
-**The usual approaches silently fail:**
+**Common workarounds fail over time:**
 
-- **`.gitignore`** — only works for files Git has never seen. Once a file is tracked, adding it to `.gitignore` does nothing. And `.gitignore` itself gets committed, so your teammates see your personal entries.
-- **`git update-index --skip-worktree`** — breaks silently after `git clone`, `git worktree add`, or any index reset. The flag disappears without warning, and the file reappears as staged or modified.
+- **`.gitignore`** — only affects untracked files. If a file has ever been tracked, adding it to `.gitignore` does not untrack it. Also, `.gitignore` is committed, so personal ignore rules leak into team history.
+- **`git update-index --skip-worktree`** — is a local index flag that can be cleared by `git clone`, `git worktree add`, or index resets, often with no clear signal until files show up as modified again.
 
-Anyone can move a file and create a symlink manually. What shelfbox adds is **tracked ownership** and structured recovery: it materializes the file at the original path, keeps Git excluded through `.git/info/exclude`, and can repair broken or missing materializations, lost local associations after a reclone, and store entries with no corresponding repository.
-
-Use `shelfbox repo repair` to repair the current repository's shelf, or `shelfbox repo reclaim` to re-associate a clone with an existing shelf after restoring `repos/`.
+Manual move-and-symlink setups are possible, but they do not provide lifecycle management. shelfbox adds **tracked ownership** and structured recovery: it materializes files at original paths, keeps them excluded via `.git/info/exclude`, and repairs broken materializations, lost repo associations after reclones, and orphaned store entries.
 
 Canonical shelf data is stored under `<store>/repos/<repo-store-dir>/`: `manifest.json` keeps repository and item metadata, and `items/` keeps the actual file contents. See [Data model](docs/architecture/data-model.md) for details.
 
@@ -60,7 +58,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/massa-kj/shelfbox/main/scripts/install.ps1 | iex
 ```
 
-The Unix installer uses `~/.local/bin` by default. The PowerShell installer uses `%LOCALAPPDATA%\Programs\shelfbox\bin`. To specify a version or directory on Linux/macOS:
+The Unix installer uses `~/.local/bin` by default. The PowerShell installer uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin`. To specify a version or directory on Linux/macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/massa-kj/shelfbox/main/scripts/install.sh | VERSION=v0.1.0 sh
@@ -98,7 +96,7 @@ Optional config at `~/.config/shelfbox/config.toml` (respects `$XDG_CONFIG_HOME`
 # store = "/mnt/data/shelfbox-store"   # default: ~/.local/share/shelfbox
 # default_format = "table"             # table | plain | json
 # materialization = "symlink"          # symlink (default) | copy
-# mutation_durability = "require"       # require (default) | best-effort
+# mutation_durability = "require"      # require (default) | best-effort
 ```
 
 The `--store <PATH>` global flag overrides config at runtime.
