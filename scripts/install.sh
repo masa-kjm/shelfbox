@@ -2,7 +2,7 @@
 # install.sh — installer for shelfbox
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/massa-kj/shelfbox/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | sh
 #
 # Environment variables:
 #   VERSION      — tag to install (e.g. v0.1.0). Defaults to the latest release.
@@ -11,7 +11,7 @@
 
 set -eu
 
-REPO="massa-kj/shelfbox"
+REPO="masa-kjm/shelfbox"
 BINARY="shelfbox"
 
 # ── Resolve install directory ─────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 # install.ps1 - installer for shelfbox
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/massa-kj/shelfbox/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1 | iex
 #
 # Parameters:
 #   -Version     Tag to install (e.g. v0.1.0). Defaults to the latest release.
@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "massa-kj/shelfbox"
+$Repo = "masa-kjm/shelfbox"
 $Binary = "shelfbox"
 
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
