@@ -433,18 +433,19 @@ fn repo_sync_validates_every_attached_item_before_any_write() {
     std::fs::write(&first, "first local edit").unwrap();
     common::run_git(repo_dir.path(), &["add", "-f", "second.txt"]);
 
-    assert!(matches!(
-        ops::repo_sync::sync_repo_report(
-            &mut ctx,
-            RepoSyncRequest {
-                direction: SyncDirection::FromStore,
-                dry_run: false,
-                confirmed: false,
-            },
-            &ignore,
-        ),
-        Err(AppError::PathIsTracked { path }) if path == second
-    ));
+    let path = match ops::repo_sync::sync_repo_report(
+        &mut ctx,
+        RepoSyncRequest {
+            direction: SyncDirection::FromStore,
+            dry_run: false,
+            confirmed: false,
+        },
+        &ignore,
+    ) {
+        Err(AppError::PathIsTracked { path }) => path,
+        result => panic!("expected PathIsTracked for second.txt, got {result:?}"),
+    };
+    common::assert_same_path(&path, &second);
     assert_eq!(std::fs::read_to_string(&first).unwrap(), "first local edit");
 }
 
@@ -549,17 +550,18 @@ fn repo_batches_reject_confirmation_and_invalid_conversion_before_writes() {
 
     std::fs::write(&first, "first canonical").unwrap();
     std::fs::write(&second, "second local edit").unwrap();
-    assert!(matches!(
-        ops::repo_materialize::materialize_repo_report(
-            &ctx,
-            RepoMaterializeRequest {
-                strategy: MaterializationStrategy::Symlink,
-                dry_run: false,
-            },
-            &ignore,
-        ),
-        Err(AppError::ContentDivergedRequiresSync { path }) if path == second
-    ));
+    let path = match ops::repo_materialize::materialize_repo_report(
+        &ctx,
+        RepoMaterializeRequest {
+            strategy: MaterializationStrategy::Symlink,
+            dry_run: false,
+        },
+        &ignore,
+    ) {
+        Err(AppError::ContentDivergedRequiresSync { path }) => path,
+        result => panic!("expected ContentDivergedRequiresSync for second.txt, got {result:?}"),
+    };
+    common::assert_same_path(&path, &second);
     // The lexically first item is eligible for conversion, but planning the
     // second diverged item rejects the complete batch before the first write.
     assert!(!first.symlink_metadata().unwrap().file_type().is_symlink());
