@@ -41,14 +41,17 @@ DEMO_UID="$(id -u)" DEMO_GID="$(id -g)" \
   docker compose -f demo/compose.yml run --rm verify
 ```
 
-Then create a clean sample repository and store:
+Inside the container:
 
 ```sh
 ./setup.sh --reset
-cd workspace/repo
-shelfbox --store ../store item add .env
-shelfbox --store ../store item status
+cd workspace/sample-repo
+shelfbox item add .env
 ```
+
+The demo container has an isolated `HOME`, so this uses shelfbox's default
+store without touching a real user store. Run `./setup.sh --reset` to recreate
+the disposable sample repository.
 
 After changing Rust sources, rebuild only this lightweight image before
 starting the shell:

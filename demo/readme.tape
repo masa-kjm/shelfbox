@@ -6,32 +6,62 @@ Require shelfbox
 Set Shell "bash"
 Set FontFamily "DejaVu Sans Mono"
 Set FontSize 22
-Set Width 900
-Set Height 540
+Set Width 1000
+Set Height 600
 Set Padding 20
-Set Margin 12
-Set MarginFill "#1e1e2e"
-Set Theme "Catppuccin Frappe"
-Set TypingSpeed 25ms
+Set Margin 24
+Set MarginFill "#11111b"
+Set Theme "Catppuccin Mocha"
+Set TypingSpeed 60ms
 Set CursorBlink false
+Set WindowBar Colorful
 
-Env PS1 "demo $ "
+Env PS1 "$ "
 
 # Keep the generated Git repository and its setup out of the recording.
 Hide
-Type "./setup.sh --reset && cd workspace/repo && clear"
+Type "./setup.sh --reset && cd workspace/sample-repo && clear"
+Sleep 400ms
 Enter
-Sleep 1s
+Sleep 1000ms
 Show
 
-Type "shelfbox --store ../store item add .env"
+Type "pwd"
+Sleep 400ms
 Enter
-Sleep 2s
+Sleep 2200ms
 
-Type "shelfbox --store ../store item list"
+Type "ls -l .env"
+Sleep 400ms
 Enter
-Sleep 2s
+Sleep 2200ms
 
-Type "shelfbox --store ../store item status"
+Type "git status --short"
+Sleep 400ms
 Enter
-Sleep 3s
+Sleep 2200ms
+
+Type "shelfbox item add .env"
+Sleep 400ms
+Enter
+Sleep 2200ms
+
+Type "ls -l .env"
+Sleep 400ms
+Enter
+Sleep 2200ms
+
+Type "git status --short"
+Sleep 400ms
+Enter
+Sleep 2200ms
+
+Type "shelfbox repo list --format plain"
+Sleep 400ms
+Enter
+Sleep 2200ms
+
+Type "shelfbox item list --format plain"
+Sleep 400ms
+Enter
+Sleep 5000ms

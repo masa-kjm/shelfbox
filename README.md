@@ -9,18 +9,25 @@ Keep AI context files, personal configs, and local secrets **visible in your edi
 ## Quick Start
 
 ```sh
-# Shelve a file
-shelfbox item add CLAUDE.local.md
+# Create a local-only file in your repository
+echo "local secret" > .env
 
-# List shelved items
+# Shelve it (keeps the path visible, stores canonical content outside Git)
+shelfbox item add .env
+
+# Confirm Git no longer reports it
+git status --short
+
+# List managed items
 shelfbox item list
 
-# Check health (exits 0 ok / 1 warn / 2 error)
-shelfbox item status
-
-# Restore (undo shelving)
-shelfbox item restore CLAUDE.local.md
+# Undo shelving when needed
+shelfbox item restore .env
 ```
+
+![shelfbox demo](demo/output/README.gif)
+
+> The demo focuses on the add and verification flow. Run `shelfbox item restore .env` afterward to return to the original state.
 
 ## Why shelfbox
 
