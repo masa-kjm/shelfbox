@@ -640,7 +640,26 @@ impl<L> DefaultMaterializer<L> {
         )
     }
 
-    fn validate_location(&self, location: &MaterializationLocation) -> Result<(PathBuf, PathBuf)> {
+    /// Validates a materialization location for a read-only inspection or
+    /// preparation step.  A missing repository-side parent is an expected
+    /// repair condition and must not cause planning or dry-run to write it.
+    fn validate_location_for_inspection(
+        &self,
+        location: &MaterializationLocation,
+    ) -> Result<(PathBuf, PathBuf)> {
+        let (repo, store) = self.paths(location);
+        secure_transfer::validate_existing_parent_path(&self.repo_root, &repo)?;
+        secure_transfer::validate_parent_path(&self.store_root, &store)?;
+        Ok((repo, store))
+    }
+
+    /// Validates a materialization location immediately before a write.  The
+    /// mutation journal creates missing repository parents before this runs,
+    /// so every intermediate component must now be a real directory.
+    fn validate_location_for_commit(
+        &self,
+        location: &MaterializationLocation,
+    ) -> Result<(PathBuf, PathBuf)> {
         let (repo, store) = self.paths(location);
         secure_transfer::validate_parent_path(&self.repo_root, &repo)?;
         secure_transfer::validate_parent_path(&self.store_root, &store)?;
@@ -650,7 +669,7 @@ impl<L> DefaultMaterializer<L> {
 
 impl<L: LinkStrategy> DefaultMaterializer<L> {
     fn inspect_location(&self, location: &MaterializationLocation) -> Result<MaterializationFacts> {
-        let (repo, store) = self.validate_location(location)?;
+        let (repo, store) = self.validate_location_for_inspection(location)?;
         let store_entry = match platform::inspect_no_follow(&store) {
             Ok(entry) => Some(entry),
             Err(AppError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
@@ -744,7 +763,7 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
         match action {
             MaterializationAction::NoOp => Ok(MaterializationCommitOutcome::NoOp),
             MaterializationAction::Create { location, strategy } => {
-                let (repo, store) = self.validate_location(&location)?;
+                let (repo, store) = self.validate_location_for_commit(&location)?;
                 self.ensure_missing(&repo)?;
                 if strategy == MaterializationStrategy::Copy {
                     return Err(AppError::Internal(
@@ -760,7 +779,7 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
                 strategy,
                 expected,
             } => {
-                let (repo, store) = self.validate_location(&location)?;
+                let (repo, store) = self.validate_location_for_commit(&location)?;
                 self.ensure_expected(&repo, &expected)?;
                 if strategy == MaterializationStrategy::Copy {
                     return Err(AppError::Internal(
@@ -772,13 +791,13 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
                 Ok(MaterializationCommitOutcome::Applied)
             }
             MaterializationAction::Remove { location, expected } => {
-                let (repo, _) = self.validate_location(&location)?;
+                let (repo, _) = self.validate_location_for_commit(&location)?;
                 self.ensure_expected(&repo, &expected)?;
                 std::fs::remove_file(&repo).map_err(|e| AppError::io(&repo, e))?;
                 Ok(MaterializationCommitOutcome::Applied)
             }
             MaterializationAction::RestoreToRegular { location, expected } => {
-                let (repo, _) = self.validate_location(&location)?;
+                let (repo, _) = self.validate_location_for_commit(&location)?;
                 self.ensure_expected(&repo, &expected)?;
                 Err(AppError::Internal(
                     "regular-copy restoration must be prepared through a mutation journal".into(),
@@ -837,7 +856,7 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
         destination: CopyDestinationExpectation,
         journal: &mut dyn MutationJournal,
     ) -> Result<PreparedMaterialization> {
-        let (repo, store) = self.validate_location(&location)?;
+        let (repo, store) = self.validate_location_for_inspection(&location)?;
         match &destination {
             CopyDestinationExpectation::Missing => self.ensure_missing(&repo)?,
             CopyDestinationExpectation::Expected(expected) => {
@@ -930,7 +949,7 @@ impl<L: LinkStrategy> Materializer for DefaultMaterializer<L> {
                 expected_store,
                 temp,
             } => {
-                let (repo, store) = self.validate_location(&location)?;
+                let (repo, store) = self.validate_location_for_commit(&location)?;
                 let actual_store =
                     InspectionSnapshot::from_entry(Some(platform::inspect_no_follow(&store)?));
                 if actual_store != expected_store {
@@ -1108,10 +1127,11 @@ mod tests {
             .unwrap();
         assert_eq!(diverged.copy_content, CopyContentState::Diverged);
 
+        let missing_parent = repo.path().join("nested");
         let missing = materializer
             .inspect(MaterializationInspectionRequest {
                 location: MaterializationLocation::new(
-                    "missing.env".parse().unwrap(),
+                    "nested/missing.env".parse().unwrap(),
                     "items/missing.env".parse().unwrap(),
                 ),
                 purpose: InspectionPurpose::Planning,
@@ -1119,6 +1139,7 @@ mod tests {
             .unwrap();
         assert_eq!(missing.repo_entry_kind, RepoEntryKind::Missing);
         assert_eq!(missing.final_component, FinalComponentInspection::Missing);
+        assert!(!missing_parent.exists());
     }
 
     #[test]

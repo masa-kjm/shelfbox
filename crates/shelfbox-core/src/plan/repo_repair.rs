@@ -85,7 +85,13 @@ impl RepairRepoReport {
         let symlinks_repaired = plan
             .symlink_actions
             .iter()
-            .filter(|action| matches!(action, RepoRepairSymlinkAction::Recreate { .. }))
+            .filter(|action| {
+                matches!(
+                    action,
+                    RepoRepairSymlinkAction::Recreate { .. }
+                        | RepoRepairSymlinkAction::CreateCopy { .. }
+                )
+            })
             .count();
         let symlinks_already_healthy = plan
             .symlink_actions

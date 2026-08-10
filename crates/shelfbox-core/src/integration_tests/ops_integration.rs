@@ -2920,15 +2920,18 @@ fn copy_repo_repair_dry_run_creates_no_records_or_files() {
     }
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
-    let file_path = repo_dir.path().join("dry-copy-repair.txt");
+    let parent = repo_dir.path().join("nested");
+    let file_path = parent.join("dry-copy-repair.txt");
+    std::fs::create_dir(&parent).unwrap();
     std::fs::write(&file_path, "dry copy").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
+    std::fs::remove_dir(&parent).unwrap();
     ignore
-        .remove_entries(repo_dir.path(), &["dry-copy-repair.txt"])
+        .remove_entries(repo_dir.path(), &["nested/dry-copy-repair.txt"])
         .unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
     let repo_before = common::snapshot_tree(repo_dir.path());
@@ -2937,10 +2940,11 @@ fn copy_repo_repair_dry_run_creates_no_records_or_files() {
     let report = ops::repair::repair_repo(&mut ctx, &link, true, false).unwrap();
     assert!(matches!(
         report.plan.symlink_actions.as_slice(),
-        [RepoRepairSymlinkAction::CreateCopy { path, .. }] if path == "dry-copy-repair.txt"
+        [RepoRepairSymlinkAction::CreateCopy { path, .. }] if path == "nested/dry-copy-repair.txt"
     ));
     assert_eq!(common::snapshot_tree(repo_dir.path()), repo_before);
     assert_eq!(common::snapshot_tree(store_dir.path()), store_before);
+    assert!(!parent.exists());
     assert!(operation_record_store::load_all(store_dir.path())
         .unwrap()
         .is_empty());
@@ -2972,6 +2976,72 @@ fn repo_repair_recreates_broken_symlinks() {
     assert!(report.symlinks_failed.is_empty());
     assert!(link.is_managed_link(&file_path, &ctx.config.store));
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "TOKEN=repo");
+}
+
+#[test]
+fn repo_repair_recreates_symlink_when_parent_directory_is_missing() {
+    if !require_symlink_support() {
+        return;
+    }
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let parent = repo_dir.path().join("nested");
+    let file_path = parent.join("repo-secret.env");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::write(&file_path, "TOKEN=repo").unwrap();
+
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+
+    std::fs::remove_file(&file_path).unwrap();
+    std::fs::remove_dir(&parent).unwrap();
+
+    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+
+    assert_eq!(report.symlinks_repaired, 1);
+    assert!(report.symlinks_failed.is_empty());
+    assert!(parent.is_dir());
+    assert!(link.is_managed_link(&file_path, &ctx.config.store));
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "TOKEN=repo");
+}
+
+#[test]
+fn repo_repair_recreates_copy_when_parent_directory_is_missing() {
+    if !require_symlink_support() {
+        return;
+    }
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let parent = repo_dir.path().join("nested");
+    let file_path = parent.join("repo-copy.txt");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::write(&file_path, "copy repair").unwrap();
+
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    ctx.config.materialization = MaterializationStrategy::Copy;
+
+    std::fs::remove_file(&file_path).unwrap();
+    std::fs::remove_dir(&parent).unwrap();
+
+    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+
+    assert_eq!(report.symlinks_repaired, 1);
+    assert!(report.symlinks_failed.is_empty());
+    assert!(parent.is_dir());
+    assert!(!file_path
+        .symlink_metadata()
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "copy repair");
+    assert!(operation_record_store::load_all(store_dir.path())
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

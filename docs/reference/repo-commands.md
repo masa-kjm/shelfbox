@@ -125,7 +125,7 @@ first.
 
 | Problem | Action |
 |---|---|
-| Missing materialization for an `attached` item | Recreates the configured symlink or copy |
+| Missing materialization for an `attached` item | Recreates the configured symlink or copy, including any missing parent directories |
 | Equal regular copy | Leaves it unchanged |
 | Diverged regular copy | Reports it and leaves it unchanged; use `item sync` explicitly |
 | Missing or stale `.git/info/exclude` entries | Rebuilds shelfbox exclude block from `attached` items |
