@@ -2,20 +2,19 @@
 set -euo pipefail
 
 demo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-workspace="${demo_dir}/workspace"
-web_repo="${workspace}/sample-repo"
+repo_root="${demo_dir}/sample-repo"
 
 if [[ "${1:-}" == "--reset" ]]; then
-    # workspace is derived from this script's directory and is never supplied
-    # by the caller, so reset cannot target a real repository or store.
-    rm -rf -- "${workspace}"
+    # The demo repository is created under the demo directory and is not
+    # expected to be reused across runs.
+    rm -rf -- "${repo_root}"
 elif [[ $# -ne 0 ]]; then
     printf 'usage: %s [--reset]\n' "$0" >&2
     exit 2
 fi
 
-if [[ -e "${workspace}" ]]; then
-    printf 'Demo workspace already exists. Run %s --reset to recreate it.\n' "$0" >&2
+if [[ -e "${repo_root}" ]]; then
+    printf 'Demo repository already exists. Run %s --reset to recreate it.\n' "$0" >&2
     exit 1
 fi
 
@@ -32,10 +31,6 @@ init_repo() {
     git -C "${repo}" commit --quiet --message 'Initial commit'
 }
 
-init_repo "${web_repo}" 'Sample app'
+init_repo "${repo_root}" 'Sample app'
 
-# This file intentionally remains untracked so it is eligible for shelving in
-# the recording.
-printf 'API_TOKEN=demo-token\n' > "${web_repo}/.env"
-
-printf 'Demo repository: %s\n' "${web_repo}"
+printf 'Demo repository: %s\n' "${repo_root}"

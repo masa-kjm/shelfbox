@@ -8,26 +8,30 @@ Keep AI context files, personal configs, and local secrets **visible in your edi
 
 ## Quick Start
 
+![shelfbox demo](demo/output/README.gif)
+
 ```sh
 # Create a local-only file in your repository
-echo "local secret" > .env
+touch AGENTS.local.md
+
+# Confirm it exists and is still untracked
+git status --short
 
 # Shelve it (keeps the path visible, stores canonical content outside Git)
-shelfbox item add .env
+shelfbox item add AGENTS.local.md
 
 # Confirm Git no longer reports it
 git status --short
 
-# List managed items
-shelfbox item list
+# Show where shelfbox keeps its store
+shelfbox config get store
 
-# Undo shelving when needed
-shelfbox item restore .env
+# List repositories and managed items
+shelfbox repo list --format plain
+shelfbox item list --format plain
 ```
 
-![shelfbox demo](demo/output/README.gif)
-
-> The demo focuses on the add and verification flow. Run `shelfbox item restore .env` afterward to return to the original state.
+> The demo focuses on the add and verification flow. Run `shelfbox item restore AGENTS.local.md` afterward to return to the original state.
 
 ## Why shelfbox
 
@@ -35,7 +39,7 @@ Some files need to stay in your repository tree so editors and tools can discove
 
 | File | Why shelve it |
 |---|---|
-| `CLAUDE.local.md`, `AGENTS.md`, etc. | Personal AI assistant instructions |
+| `AGENTS.local.md`, `skills/my-skill/`, etc. | Personal AI assistant instructions |
 | `notes/scratch.md` | Personal development notes |
 | `config/local.yml` | Machine-specific config overrides |
 | `.env` | Local secrets and credentials |

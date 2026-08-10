@@ -23,7 +23,7 @@ DEMO_UID="$(id -u)" DEMO_GID="$(id -g)" \
 ```
 
 The first run builds shelfbox and the VHS recorder image. It recreates the
-ignored `demo/workspace/` directory and writes the tracked output to
+sample repository under `demo/sample-repo` and writes the tracked output to
 `demo/output/README.gif`.
 
 Build again after changing Rust sources:
@@ -45,7 +45,7 @@ Inside the container:
 
 ```sh
 ./setup.sh --reset
-cd workspace/sample-repo
+cd sample-repo
 shelfbox item add .env
 ```
 
@@ -60,4 +60,4 @@ starting the shell:
 docker compose -f demo/compose.yml build verify
 ```
 
-`setup.sh --reset` deletes only `demo/workspace/`, which is generated and ignored by Git. It never reads or writes a real user store or repository.
+`setup.sh --reset` deletes only `demo/sample-repo/`, which is generated and ignored by Git. It never reads or writes a real user store or repository.
