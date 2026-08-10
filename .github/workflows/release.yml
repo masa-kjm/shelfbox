@@ -17,8 +17,42 @@ permissions:
   contents: read
 
 jobs:
+  validate-release:
+    name: Validate release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # workflow_dispatch is an artifact-only dry run. A tag push is the release action, so validate its provenance and release metadata first.
+      - name: Validate tag, version, and changelog
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          manifest_version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n 1)"
+
+          test "${version}" = "${manifest_version}"
+          test -n "${manifest_version}"
+          grep --fixed-strings --line-regexp "## ${tag}" CHANGELOG.md
+
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+
+      - name: Verify Cargo.lock is current
+        if: github.event_name == 'push'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check locked dependency resolution
+        if: github.event_name == 'push'
+        run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
+
   build:
     name: Build (${{ matrix.target }})
+    needs: validate-release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

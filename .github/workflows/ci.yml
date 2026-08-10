@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["main", "develop"]
+    branches: ["main"]
   pull_request:
+    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always
@@ -53,10 +54,10 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: cargo check
-        run: cargo check --workspace --all-targets
+        run: cargo check --workspace --all-targets --locked
 
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       # Windows has no documented parent-directory fsync equivalent. Mutating
       # CLI workflows therefore fail closed for directory durability, so their
@@ -64,11 +65,11 @@ jobs:
       # mutation safety is exercised in windows-replace-safety below.
       - name: cargo test (Windows CLI unit coverage)
         if: runner.os == 'Windows'
-        run: cargo test -p shelfbox --bin shelfbox
+        run: cargo test -p shelfbox --bin shelfbox --locked
 
       - name: cargo test (non-Windows)
         if: runner.os != 'Windows'
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   copy-without-symlink:
     name: Copy workflow without symlink capability
@@ -93,10 +94,10 @@ jobs:
       # operation. It proves Copy add does not merely pass because the runner
       # happens to allow symlink creation.
       - name: Copy add with an unavailable link adapter
-        run: cargo test -p shelfbox-core copy_add_succeeds_without_link_strategy --lib
+        run: cargo test -p shelfbox-core --locked copy_add_succeeds_without_link_strategy --lib
 
       - name: Copy CLI workflow
-        run: cargo test -p shelfbox --test cli_behavior_lock copy_materialization_is_available_through_config_and_item_paths
+        run: cargo test -p shelfbox --locked --test cli_behavior_lock copy_materialization_is_available_through_config_and_item_paths
 
   linux-cross-device:
     name: Linux cross-device Copy and symlink add
@@ -123,7 +124,7 @@ jobs:
       # The tests use /dev/shm and fail, rather than skip, if it is not a
       # distinct filesystem. They cover both the legacy symlink and Copy path.
       - name: Cross-device add integration
-        run: cargo test -p shelfbox-core across_filesystems --lib
+        run: cargo test -p shelfbox-core --locked across_filesystems --lib
 
   macos-forced-exdev:
     name: macOS adapter and forced EXDEV safety
@@ -145,16 +146,16 @@ jobs:
           restore-keys: macos-forced-exdev-cargo-
 
       - name: Forced EXDEV preserves both paths
-        run: cargo test -p shelfbox-core forced_exdev --lib
+        run: cargo test -p shelfbox-core --locked forced_exdev --lib
 
       - name: No-follow inspection handles files, directories, and symlinks
-        run: cargo test -p shelfbox-core macos_no_follow --lib
+        run: cargo test -p shelfbox-core --locked macos_no_follow --lib
 
       - name: Trusted-root aliases preserve durable artifact paths
-        run: cargo test -p shelfbox-core artifact_location_accepts_uncreated_temp_via_trusted_root_alias --lib
+        run: cargo test -p shelfbox-core --locked artifact_location_accepts_uncreated_temp_via_trusted_root_alias --lib
 
       - name: Same-directory aliases preserve atomic replacement
-        run: cargo test -p shelfbox-core atomic_replace_accepts_alias_of_the_same_parent_directory --lib
+        run: cargo test -p shelfbox-core --locked atomic_replace_accepts_alias_of_the_same_parent_directory --lib
 
   windows-replace-safety:
     name: Windows replacement and sharing-violation safety
@@ -176,13 +177,13 @@ jobs:
           restore-keys: windows-replace-safety-cargo-
 
       - name: Sharing violation preserves source and destination
-        run: cargo test -p shelfbox-core sharing_violation_preserves_source_and_old_destination --lib
+        run: cargo test -p shelfbox-core --locked sharing_violation_preserves_source_and_old_destination --lib
 
       - name: Atomic replacement semantics
-        run: cargo test -p shelfbox-core atomic_replace_existing_regular_file --lib
+        run: cargo test -p shelfbox-core --locked atomic_replace_existing_regular_file --lib
 
       - name: Capability matrix is explicit
-        run: cargo test -p shelfbox-core capability_matrix_is_explicit --lib
+        run: cargo test -p shelfbox-core --locked capability_matrix_is_explicit --lib
 
   windows-mutation-durability:
     name: Windows require fail-closed and best-effort Copy workflow
@@ -208,7 +209,7 @@ jobs:
       # explicit local opt-in completes a Copy add. Symlink capability is not
       # part of this lane and remains independently probed elsewhere.
       - name: Require fail-closed; best-effort Copy update
-        run: cargo test -p shelfbox --test cli_behavior_lock windows_require_fails_closed_and_best_effort_copy_add_is_opt_in
+        run: cargo test -p shelfbox --locked --test cli_behavior_lock windows_require_fails_closed_and_best_effort_copy_add_is_opt_in
 
   compatibility-boundaries:
     name: JSON compatibility and architecture boundaries
@@ -230,7 +231,7 @@ jobs:
           restore-keys: ubuntu-compatibility-boundaries-cargo-
 
       - name: Operation layer architecture boundary
-        run: cargo test -p shelfbox-core --test architecture_boundaries
+        run: cargo test -p shelfbox-core --locked --test architecture_boundaries
 
       - name: Public JSON and CLI compatibility lock
-        run: cargo test -p shelfbox --test cli_behavior_lock
+        run: cargo test -p shelfbox --locked --test cli_behavior_lock
