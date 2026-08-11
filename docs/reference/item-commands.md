@@ -98,8 +98,9 @@ shelfbox item repair secrets/api_key.txt
 `item repair` is ownership-neutral. It does not touch the manifest state,
 exclude entries, repository association, or store data.
 
-For a missing entry, repair uses the configured strategy. Equal regular copies
-and valid symlinks are no-ops; a diverged regular copy is reported and left
+For a missing entry, repair uses the configured strategy and recreates missing
+parent directories inside the repository when needed. Equal regular copies and
+valid symlinks are no-ops; a diverged regular copy is reported and left
 unchanged until an explicit sync is chosen.
 
 **Wrong-target symlinks require `--force`:**

@@ -14,7 +14,10 @@ use tempfile::TempDir;
 
 use shelfbox_core::{
     context,
-    domain::{materialization::MaterializationStrategy, operation_record::OperationPhase},
+    domain::{
+        materialization::MaterializationStrategy, operation_record::OperationPhase,
+        ownership::OwnershipState,
+    },
     error::{AppError, Result},
     failpoint::{self, Failpoint},
     ignore::{GitInfoExclude, IgnoreBackend},
@@ -2293,7 +2296,9 @@ fn repair_recreates_missing_symlink() {
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
 
-    let file_path = repo_dir.path().join("secret.env");
+    let parent = repo_dir.path().join("nested");
+    let file_path = parent.join("secret.env");
+    std::fs::create_dir(&parent).unwrap();
     std::fs::write(&file_path, "TOKEN=abc").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
@@ -2307,8 +2312,9 @@ fn repair_recreates_missing_symlink() {
         .file_type()
         .is_symlink());
 
-    // Simulate the symlink being removed (e.g. by `rm`).
+    // Simulate the materialization and its parent being removed.
     std::fs::remove_file(&file_path).unwrap();
+    std::fs::remove_dir(&parent).unwrap();
     assert!(!file_path.exists(), "symlink must be gone before repair");
 
     let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
@@ -2576,13 +2582,16 @@ fn item_repair_copy_recreates_only_a_missing_materialization() {
     }
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
-    let file_path = repo_dir.path().join("repair-copy.txt");
+    let parent = repo_dir.path().join("nested");
+    let file_path = parent.join("repair-copy.txt");
+    std::fs::create_dir(&parent).unwrap();
     std::fs::write(&file_path, "copy repair").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
+    std::fs::remove_dir(&parent).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
     let report = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
@@ -3039,6 +3048,65 @@ fn repo_repair_recreates_copy_when_parent_directory_is_missing() {
         .file_type()
         .is_symlink());
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "copy repair");
+    assert!(operation_record_store::load_all(store_dir.path())
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn repo_repair_failure_after_parent_creation_keeps_created_parents() {
+    if !require_symlink_support() {
+        return;
+    }
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let parent = repo_dir.path().join("nested/deep");
+    let file_path = parent.join("repo-secret.env");
+    let unrelated = repo_dir.path().join("unrelated.env");
+    std::fs::create_dir_all(&parent).unwrap();
+    std::fs::write(&file_path, "TOKEN=repo").unwrap();
+    std::fs::write(&unrelated, "TOKEN=unrelated").unwrap();
+
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    ops::add::add_report(&mut ctx, &unrelated, false, &link, &ignore).unwrap();
+    let item = ctx.manifest.get("nested/deep/repo-secret.env").unwrap();
+    let store_path = ctx.repo_store.join(&item.store_path);
+    let store_content = std::fs::read_to_string(&store_path).unwrap();
+
+    std::fs::remove_file(&file_path).unwrap();
+    std::fs::remove_dir_all(repo_dir.path().join("nested")).unwrap();
+    let hook = failpoint::install_test_hook(|point| {
+        if *point == Failpoint::ParentDirectoriesCreated {
+            return Err(AppError::Internal(
+                "interrupt after creating parents".into(),
+            ));
+        }
+        Ok(())
+    });
+
+    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    drop(hook);
+
+    assert_eq!(report.symlinks_repaired, 0);
+    assert_eq!(report.symlinks_failed.len(), 1);
+    assert!(parent.is_dir());
+    assert!(file_path.symlink_metadata().is_err());
+    assert_eq!(std::fs::read_to_string(&store_path).unwrap(), store_content);
+    assert_eq!(
+        ctx.manifest
+            .get("nested/deep/repo-secret.env")
+            .unwrap()
+            .ownership_state,
+        OwnershipState::Attached
+    );
+    assert!(link.is_managed_link(&unrelated, &ctx.config.store));
+    assert_eq!(
+        std::fs::read_to_string(&unrelated).unwrap(),
+        "TOKEN=unrelated"
+    );
     assert!(operation_record_store::load_all(store_dir.path())
         .unwrap()
         .is_empty());
