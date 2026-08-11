@@ -154,6 +154,139 @@ fn add_and_restore_file() {
 }
 
 #[test]
+fn restore_prunes_empty_store_item_ancestors_without_removing_shared_parents() {
+    if !require_symlink_support() {
+        return;
+    }
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let config_dir = repo_dir.path().join("config");
+    std::fs::create_dir(&config_dir).unwrap();
+    let first_path = config_dir.join("first.env");
+    let second_path = config_dir.join("second.env");
+    std::fs::write(&first_path, "first").unwrap();
+    std::fs::write(&second_path, "second").unwrap();
+
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    ops::add::add_report(&mut ctx, &first_path, false, &link, &ignore).unwrap();
+    ops::add::add_report(&mut ctx, &second_path, false, &link, &ignore).unwrap();
+
+    let items_dir = ctx.repo_store.join("items");
+    let store_parent = items_dir.join("config");
+    ops::restore::restore(&mut ctx, &first_path, false, false, false, &link, &ignore).unwrap();
+
+    assert!(
+        store_parent.is_dir(),
+        "a parent that still contains a canonical item must remain"
+    );
+    assert!(store_parent.join("second.env").is_file());
+
+    ops::restore::restore(&mut ctx, &second_path, false, false, false, &link, &ignore).unwrap();
+
+    assert!(
+        items_dir.is_dir(),
+        "the items directory is a retained boundary"
+    );
+    assert!(
+        !store_parent.exists(),
+        "the empty item ancestor must be pruned after a successful restore"
+    );
+}
+
+#[test]
+fn namespace_restore_prunes_all_empty_store_item_ancestors() {
+    if !require_symlink_support() {
+        return;
+    }
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let secrets_dir = repo_dir.path().join("secrets");
+    std::fs::create_dir_all(secrets_dir.join("local")).unwrap();
+    std::fs::write(secrets_dir.join("local/one.env"), "one").unwrap();
+    std::fs::write(secrets_dir.join("two.env"), "two").unwrap();
+
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    ops::add::add_directory(&mut ctx, &secrets_dir, false, &link, &ignore).unwrap();
+
+    let result =
+        ops::restore::restore_namespace(&mut ctx, "secrets/", false, false, false, &link, &ignore)
+            .unwrap();
+
+    assert!(result
+        .results
+        .iter()
+        .all(|(_, outcome)| matches!(outcome, ops::restore::NsRestoreItemOutcome::Restored)));
+    assert!(ctx.repo_store.join("items").is_dir());
+    assert!(!ctx.repo_store.join("items/secrets").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn restore_succeeds_when_empty_item_directory_cleanup_is_not_permitted() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if !require_symlink_support() {
+        return;
+    }
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let secret_dir = repo_dir.path().join("secret");
+    std::fs::create_dir(&secret_dir).unwrap();
+    let file_path = secret_dir.join("local.env");
+    std::fs::write(&file_path, "secret").unwrap();
+
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+
+    let items_dir = ctx.repo_store.join("items");
+    let canonical_path = items_dir.join("secret/local.env");
+    let original_permissions = std::fs::metadata(&items_dir).unwrap().permissions();
+    let mut locked_permissions = original_permissions.clone();
+    locked_permissions.set_mode(0o500);
+    std::fs::set_permissions(&items_dir, locked_permissions).unwrap();
+
+    let result = ops::restore::restore(&mut ctx, &file_path, false, false, false, &link, &ignore);
+
+    std::fs::set_permissions(&items_dir, original_permissions).unwrap();
+    result.unwrap();
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "secret");
+    assert!(ctx.manifest.items.is_empty());
+    assert!(
+        store::manifest::load(&ctx.repo_store)
+            .unwrap()
+            .items
+            .is_empty(),
+        "the persisted manifest must remove the restored item"
+    );
+    assert!(
+        operation_record_store::load_all(store_dir.path())
+            .unwrap()
+            .is_empty(),
+        "a best-effort cleanup failure must not leave a recovery record"
+    );
+    assert!(
+        !canonical_path.exists(),
+        "the canonical item must remain removed after restore"
+    );
+    assert!(
+        !ignore
+            .has_entry(repo_dir.path(), "secret/local.env")
+            .unwrap(),
+        "normal restore must persist the expected exclude update"
+    );
+    assert!(
+        items_dir.join("secret").is_dir(),
+        "cleanup failure must not make restore fail or remove unrelated state"
+    );
+}
+
+#[test]
 fn add_phase_failpoints_recover_to_one_valid_state() {
     if !require_symlink_support() {
         return;
@@ -1548,7 +1681,9 @@ fn restore_dry_run_makes_no_changes() {
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
 
-    let file_path = repo_dir.path().join("notes.md");
+    let notes_dir = repo_dir.path().join("notes/drafts");
+    std::fs::create_dir_all(&notes_dir).unwrap();
+    let file_path = notes_dir.join("notes.md");
     std::fs::write(&file_path, "# notes").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
@@ -1565,7 +1700,7 @@ fn restore_dry_run_makes_no_changes() {
     let report =
         ops::restore::restore(&mut ctx, &file_path, true, false, false, &link, &ignore).unwrap();
     assert!(report.dry_run);
-    assert_eq!(report.plan.path, "notes.md");
+    assert_eq!(report.plan.path, "notes/drafts/notes.md");
     assert_eq!(report.plan.action, ItemRestoreAction::RestoreFile);
 
     // Symlink must still be in place.
@@ -1722,7 +1857,9 @@ fn restore_keep_store_leaves_symlink_and_store_item() {
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
 
-    let file_path = repo_dir.path().join("keep.txt");
+    let keep_dir = repo_dir.path().join("keep");
+    std::fs::create_dir(&keep_dir).unwrap();
+    let file_path = keep_dir.join("keep.txt");
     std::fs::write(&file_path, "keep me").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
@@ -1730,7 +1867,7 @@ fn restore_keep_store_leaves_symlink_and_store_item() {
     let ignore = GitInfoExclude;
 
     ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
-    let store_path = ctx.repo_store.join("items/keep.txt");
+    let store_path = ctx.repo_store.join("items/keep/keep.txt");
     assert!(store_path.exists(), "store item must exist after add");
 
     // Restore with keep_store=true: item transitions to Detached state.

@@ -298,7 +298,14 @@ fn execute_restore(
     )?;
     journal.advance(OperationPhase::PostCommitValidated)?;
     drop(journal);
-    operation_record_store::remove(&store_root, &recovery_record_id)
+    operation_record_store::remove(&store_root, &recovery_record_id)?;
+
+    // The durable restore is complete. Empty item ancestors are only cosmetic
+    // residue, so failures here must not turn a successful restore into an
+    // error or affect its recovery state.
+    let _ = transfer.prune_empty_item_ancestors(&ctx.repo_store, &plan.store_path);
+
+    Ok(())
 }
 
 fn validate_restore_integration(
