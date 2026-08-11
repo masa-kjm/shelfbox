@@ -24,14 +24,7 @@ pub(crate) fn sync_repo_report(
     ignore: &dyn IgnoreBackend,
 ) -> Result<RepoSyncReport> {
     let plan = build_repo_sync_plan(ctx, request.direction, ignore)?;
-    if !request.dry_run
-        && request.direction == SyncDirection::FromRepo
-        && plan
-            .items
-            .iter()
-            .any(|item| item.action == ItemSyncAction::ReplaceStoreFromRepo)
-        && !request.confirmed
-    {
+    if !request.dry_run && requires_confirmation(request.direction, &plan) && !request.confirmed {
         return Err(AppError::SyncConfirmationRequired);
     }
 
@@ -109,4 +102,17 @@ fn build_repo_sync_plan(
     }
 
     Ok(RepoSyncPlan { direction, items })
+}
+
+fn requires_confirmation(direction: SyncDirection, plan: &RepoSyncPlan) -> bool {
+    match direction {
+        SyncDirection::FromStore => plan
+            .items
+            .iter()
+            .any(|item| item.action == ItemSyncAction::ReplaceRepoFromStore),
+        SyncDirection::FromRepo => plan
+            .items
+            .iter()
+            .any(|item| item.action == ItemSyncAction::ReplaceStoreFromRepo),
+    }
 }

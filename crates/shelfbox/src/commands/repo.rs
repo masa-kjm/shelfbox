@@ -56,7 +56,7 @@ pub enum RepoCommand {
         #[arg(long)]
         dry_run: bool,
 
-        /// Required before any repository item may replace canonical content.
+        /// Required when the selected direction would overwrite any target.
         #[arg(long)]
         yes: bool,
     },

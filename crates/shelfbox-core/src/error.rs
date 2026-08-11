@@ -162,9 +162,9 @@ pub enum AppError {
     #[error("'{path}' is missing its materialization; run 'shelfbox item repair {path}' first")]
     SyncMaterializationMissing { path: PathBuf },
 
-    /// Repository-to-store sync is deliberately an explicit destructive
-    /// operation even though it uses an atomic replacement primitive.
-    #[error("syncing repository content into the canonical store requires --yes")]
+    /// Synchronization that would overwrite the selected target requires an
+    /// explicit confirmation flag, even though writes use atomic replacement.
+    #[error("this sync direction would overwrite content; rerun with --yes")]
     SyncConfirmationRequired,
 
     /// The requested direction requires a currently attached isolated regular

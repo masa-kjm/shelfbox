@@ -173,8 +173,13 @@ materialization counts report what would be repaired without writing files.
 Synchronizes the current repository's attached items by reusing the exact
 item-level sync policy for every target.
 
+This command is primarily for Copy mode regular copies. For managed symlinks,
+`--from store` is a no-op because they already read canonical store content,
+and `--from repo` is rejected unless the target is an attached isolated
+regular copy.
+
 ```sh
-shelfbox repo sync --from store
+shelfbox repo sync --from store --yes
 shelfbox repo sync --from repo --yes
 ```
 
@@ -184,17 +189,19 @@ exclude, unsafe entry, or diverged target that the selected direction cannot
 use) performs no writes. Managed symlinks are reported as no-op because they
 already read canonical store content. Detached items are outside this batch.
 
-For `--from repo`, `--yes` is required only if at least one regular copy would
-replace canonical store content. Use `--dry-run` to review the full target
-list without writing. After initial validation succeeds, an execution-time
-race or I/O failure stops the ordered batch; completed earlier items and the
-failing path are reported, and later items are not written.
+For either direction, `--yes` is required only if at least one regular copy
+would be overwritten by the selected source of truth. Without `--yes`,
+shelfbox returns a confirmation-required error and performs no write; it does
+not open an interactive prompt for this command. Use `--dry-run` to review the
+full target list without writing. After initial validation succeeds, an
+execution-time race or I/O failure stops the ordered batch; completed earlier
+items and the failing path are reported, and later items are not written.
 
 | Flag | Description |
 |---|---|
 | `--from <store|repo>` | Required source of truth for this batch. |
 | `--dry-run` | Print every item decision without writing. |
-| `--yes` | Required with `--from repo` when the batch would update canonical content. |
+| `--yes` | Required when the selected direction would overwrite at least one regular copy target. |
 
 ---
 

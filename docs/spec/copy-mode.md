@@ -629,8 +629,8 @@ On POSIX, use rename without following the target. Encapsulate Windows replaceme
 * `repo materialize --strategy symlink|copy`
 * Reuse item-level operation conflict policy, reports, and recovery.
 * Validate the complete attached target set before the first write and require
-  `--yes` for actual `--from repo` writes. `--dry-run` reports the full target
-  list without writing.
+  `--yes` when the selected sync direction would overwrite any regular-copy
+  target. `--dry-run` reports the full target list without writing.
 * Execute validated items in lexical order. Stop at the first execution-time
   failure and report completed earlier items; never write later items.
 * Detached items remain outside repo batches and require an explicit item-level

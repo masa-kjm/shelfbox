@@ -254,14 +254,17 @@ the batch:
 
 ```sh
 shelfbox repo sync --from store --dry-run
-shelfbox repo sync --from store
+shelfbox repo sync --from store --yes
 shelfbox repo sync --from repo --yes
 ```
 
-`--from repo` can replace canonical store data and therefore requires `--yes`
-when any item would change. The batch validates every item before its first
-write. If an execution-time race occurs later, it stops and reports the
-completed items rather than continuing into unvalidated state.
+Both directions require `--yes` when any item would be overwritten by the
+selected source of truth. Without `--yes`, shelfbox returns a
+confirmation-required error and does not prompt interactively. When no item
+needs replacement, either direction runs without `--yes`. The batch validates
+every item before its first write. If an execution-time race occurs later, it
+stops and reports the completed items rather than continuing into unvalidated
+state.
 
 ---
 
