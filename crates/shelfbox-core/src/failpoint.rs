@@ -23,6 +23,9 @@ pub(crate) enum Failpoint {
     DirectionlessRelinkMaterialized,
     DirectionlessRelinkManifestSaved,
     RepoRepairTargetExcludeUpdated,
+    /// Runs after repair creates one or more missing repository parent
+    /// directories and before it performs the next mutation.
+    ParentDirectoriesCreated,
     /// Runs after operation-level preconditions and before the journal repeats
     /// Git/exclude and artifact checks to authorize commit.
     WritePreconditionsValidated,
@@ -107,6 +110,7 @@ mod tests {
             Failpoint::DirectionlessRelinkMaterialized,
             Failpoint::DirectionlessRelinkManifestSaved,
             Failpoint::RepoRepairTargetExcludeUpdated,
+            Failpoint::ParentDirectoriesCreated,
             Failpoint::WritePreconditionsValidated,
         ];
         for point in points.clone() {

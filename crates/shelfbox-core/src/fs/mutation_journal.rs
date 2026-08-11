@@ -554,7 +554,7 @@ impl<'a> RepairMutationJournal<'a> {
             ArtifactScope::RepoSide => (self.repo_root, &self.repo_destination),
             ArtifactScope::StoreSide => (self.store_root, &self.store_destination),
         };
-        permissions::ensure_parent_dir(destination, ParentDirMode::Default)?;
+        permissions::ensure_parent_dir_in_trusted_root(root, destination)?;
         secure_transfer::validate_parent_path(root, destination)?;
         let parent = destination
             .parent()
@@ -664,7 +664,7 @@ impl<'a> RepairMutationJournal<'a> {
     }
 
     fn validate_commit_preconditions(&self, guard: &WritePreconditionGuard) -> Result<()> {
-        permissions::ensure_parent_dir(&self.repo_destination, ParentDirMode::Default)?;
+        permissions::ensure_parent_dir_in_trusted_root(self.repo_root, &self.repo_destination)?;
         secure_transfer::validate_parent_path(self.repo_root, &self.repo_destination)?;
         secure_transfer::validate_parent_path(self.store_root, &self.store_destination)?;
         if git::is_tracked(self.repo_root, &self.repo_destination)? {

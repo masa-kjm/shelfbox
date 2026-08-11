@@ -54,6 +54,41 @@ pub(crate) fn validate_parent_path(root: &Path, path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Validates every existing intermediate component below `root` without
+/// following links, while allowing a trailing suffix of missing directories.
+///
+/// This is for read-only planning of a create destination.  Callers must use
+/// [`validate_parent_path`] again after they create the missing parents and
+/// immediately before committing a write.
+pub(crate) fn validate_existing_parent_path(root: &Path, path: &Path) -> Result<()> {
+    let relative = relative_path_in_trusted_root(root, path)?;
+    let mut current = root.to_path_buf();
+    let parents = relative.parent().unwrap_or_else(|| Path::new(""));
+    for component in parents.components() {
+        let Component::Normal(name) = component else {
+            return Err(AppError::UnsafeFilesystemEntry {
+                path: path.to_path_buf(),
+                reason: "path contains a non-normal component",
+            });
+        };
+        current.push(name);
+        match platform::inspect_no_follow(&current) {
+            Ok(entry) if entry.kind == platform::EntryKind::Directory => {}
+            Ok(_) => {
+                return Err(AppError::UnsafeFilesystemEntry {
+                    path: current,
+                    reason: "intermediate component is not a directory",
+                });
+            }
+            Err(AppError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
 /// Obtains a lexical path below `root` without treating a platform alias as
 /// an escape. macOS exposes the same temporary directory through `/var` and
 /// `/private/var`; git can return one spelling while a caller provides the
@@ -539,6 +574,28 @@ mod tests {
     }
 
     #[test]
+    fn planning_validation_allows_missing_parent_suffix_without_writing() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("nested/deep/secret");
+
+        validate_existing_parent_path(root.path(), &path).unwrap();
+
+        assert!(!root.path().join("nested").exists());
+    }
+
+    #[test]
+    fn planning_validation_rejects_non_directory_before_missing_suffix() {
+        let root = tempfile::tempdir().unwrap();
+        let blocked = root.path().join("blocked");
+        std::fs::write(&blocked, "not a directory").unwrap();
+
+        assert!(matches!(
+            validate_existing_parent_path(root.path(), &blocked.join("nested/secret")),
+            Err(AppError::UnsafeFilesystemEntry { .. })
+        ));
+    }
+
+    #[test]
     fn rejects_intermediate_symlink_escape() {
         let root = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
@@ -550,6 +607,10 @@ mod tests {
             return;
         }
         let path = link.join("secret");
+        assert!(matches!(
+            validate_existing_parent_path(root.path(), &path),
+            Err(AppError::UnsafeFilesystemEntry { .. })
+        ));
         assert!(matches!(
             validate_parent_path(root.path(), &path),
             Err(AppError::UnsafeFilesystemEntry { .. })
