@@ -72,6 +72,10 @@ shelfbox item restore secrets/notes/local.md
 5. Removes the item from `manifest.json`.
 6. Removes the path from `.git/info/exclude` unless `--keep-ignore` is used.
 
+After a successful normal restore, shelfbox also makes a best-effort attempt
+to remove empty ancestor directories below the repository store's `items/`
+directory. It never removes `items/` itself.
+
 An equal regular copy is retained while management is removed. A diverged copy
 is never overwritten or deleted by restore; run `item sync --from store` or
 `item sync --from repo --yes` first.

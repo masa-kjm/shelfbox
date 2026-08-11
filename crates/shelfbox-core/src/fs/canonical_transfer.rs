@@ -6,7 +6,8 @@
 
 use std::{
     fmt,
-    path::{Path, PathBuf},
+    io::ErrorKind,
+    path::{Component, Path, PathBuf},
 };
 
 use crate::{
@@ -331,6 +332,105 @@ impl DefaultCanonicalTransfer {
                 path: path.to_path_buf(),
             });
         }
+        Ok(())
+    }
+
+    /// Removes empty ancestors of a removed canonical item without crossing
+    /// the repository store's `items/` boundary.
+    ///
+    /// This is deliberately non-recursive: an entry is removed only when
+    /// `remove_dir` confirms that it is empty.
+    /// Callers use this only after their durable operation has committed, so a
+    /// cleanup failure must not change that operation's result.
+    pub(crate) fn prune_empty_item_ancestors(
+        &self,
+        repo_store: &Path,
+        item_path: &Path,
+    ) -> Result<()> {
+        let store_entry = platform::inspect_no_follow(&self.store_root)?;
+        if store_entry.kind != platform::EntryKind::Directory {
+            return Err(AppError::UnsafeFilesystemEntry {
+                path: self.store_root.clone(),
+                reason: "configured store root is not a directory",
+            });
+        }
+        secure_transfer::relative_path_in_trusted_root(&self.store_root, repo_store)?;
+
+        let repo_entry = platform::inspect_no_follow(repo_store)?;
+        if repo_entry.kind != platform::EntryKind::Directory {
+            return Err(AppError::UnsafeFilesystemEntry {
+                path: repo_store.to_path_buf(),
+                reason: "repository store is not a directory",
+            });
+        }
+
+        let item_relative = secure_transfer::relative_path_in_trusted_root(repo_store, item_path)?;
+        let item_relative =
+            item_relative
+                .strip_prefix("items")
+                .map_err(|_| AppError::UnsafeFilesystemEntry {
+                    path: item_path.to_path_buf(),
+                    reason: "canonical item is outside the repository store items directory",
+                })?;
+        if item_relative.as_os_str().is_empty()
+            || item_relative
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err(AppError::UnsafeFilesystemEntry {
+                path: item_path.to_path_buf(),
+                reason: "canonical item path is not normalized below the items directory",
+            });
+        }
+
+        let items_root = repo_store.join("items");
+        let items_entry = platform::inspect_no_follow(&items_root)?;
+        if items_entry.kind != platform::EntryKind::Directory {
+            return Err(AppError::UnsafeFilesystemEntry {
+                path: items_root,
+                reason: "repository store items directory is not a directory",
+            });
+        }
+
+        let mut current = items_root.join(item_relative.parent().unwrap_or_else(|| Path::new("")));
+        secure_transfer::validate_parent_path(&items_root, &current)?;
+        while current != items_root {
+            match platform::inspect_no_follow(&current) {
+                Ok(entry) if entry.kind == platform::EntryKind::Directory => {}
+                Ok(_) => {
+                    return Err(AppError::UnsafeFilesystemEntry {
+                        path: current,
+                        reason: "canonical item ancestor is not a directory",
+                    });
+                }
+                Err(AppError::Io { source, .. }) if source.kind() == ErrorKind::NotFound => {
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+            }
+
+            match std::fs::remove_dir(&current) {
+                Ok(()) => {}
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        ErrorKind::DirectoryNotEmpty | ErrorKind::NotFound
+                    ) =>
+                {
+                    return Ok(());
+                }
+                Err(error) => return Err(AppError::io(&current, error)),
+            }
+
+            let Some(parent) = current.parent() else {
+                return Err(AppError::UnsafeFilesystemEntry {
+                    path: current,
+                    reason: "canonical item ancestor has no parent",
+                });
+            };
+            current = parent.to_path_buf();
+        }
+
         Ok(())
     }
 }
@@ -660,6 +760,7 @@ pub(crate) const CANONICAL_TRANSFER_PHASES: &[DurableOperationPhase] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn canonical_action_keeps_its_identity_snapshot_opaque() {
@@ -689,6 +790,80 @@ mod tests {
             .unwrap_err();
         assert!(
             matches!(error, AppError::Internal(message) if message.contains("does not authorize"))
+        );
+    }
+
+    #[test]
+    fn prune_empty_item_ancestors_stops_at_items_root() {
+        let store = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let repo_store = store.path().join("repos/example");
+        let nested_parent = repo_store.join("items/config/local");
+        fs::create_dir_all(&nested_parent).unwrap();
+        let item_path = nested_parent.join("settings.env");
+        let transfer =
+            DefaultCanonicalTransfer::new(repo.path().to_path_buf(), store.path().to_path_buf());
+
+        transfer
+            .prune_empty_item_ancestors(&repo_store, &item_path)
+            .unwrap();
+
+        assert!(repo_store.join("items").is_dir());
+        assert!(!repo_store.join("items/config").exists());
+    }
+
+    #[test]
+    fn prune_empty_item_ancestors_keeps_nonempty_parent() {
+        let store = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let repo_store = store.path().join("repos/example");
+        let parent = repo_store.join("items/config");
+        fs::create_dir_all(&parent).unwrap();
+        fs::write(parent.join("remaining.env"), "keep").unwrap();
+        let item_path = parent.join("restored.env");
+        let transfer =
+            DefaultCanonicalTransfer::new(repo.path().to_path_buf(), store.path().to_path_buf());
+
+        transfer
+            .prune_empty_item_ancestors(&repo_store, &item_path)
+            .unwrap();
+
+        assert!(parent.is_dir());
+        assert!(parent.join("remaining.env").is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prune_empty_item_ancestors_rejects_a_symlink_ancestor() {
+        use std::os::unix::fs::symlink;
+
+        let store = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let repo_store = store.path().join("repos/example");
+        let items_root = repo_store.join("items");
+        fs::create_dir_all(&items_root).unwrap();
+        fs::create_dir(outside.path().join("nested")).unwrap();
+        symlink(outside.path(), items_root.join("escaped")).unwrap();
+        let item_path = items_root.join("escaped/nested/settings.env");
+        let transfer =
+            DefaultCanonicalTransfer::new(repo.path().to_path_buf(), store.path().to_path_buf());
+
+        let error = transfer
+            .prune_empty_item_ancestors(&repo_store, &item_path)
+            .unwrap_err();
+
+        assert!(matches!(error, AppError::UnsafeFilesystemEntry { .. }));
+        assert!(items_root
+            .join("escaped")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(outside.path().is_dir());
+        assert!(
+            outside.path().join("nested").is_dir(),
+            "cleanup must not traverse a symlink ancestor to remove an external directory"
         );
     }
 }
