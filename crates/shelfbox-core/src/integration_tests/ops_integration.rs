@@ -615,7 +615,7 @@ fn repo_sync_and_materialize_reuse_item_level_plans() {
         RepoSyncRequest {
             direction: SyncDirection::FromStore,
             dry_run: false,
-            confirmed: false,
+            confirmed: true,
         },
         &ignore,
     )
@@ -702,6 +702,121 @@ fn repo_batches_reject_confirmation_and_invalid_conversion_before_writes() {
     // second diverged item rejects the complete batch before the first write.
     assert!(!first.symlink_metadata().unwrap().file_type().is_symlink());
     assert_eq!(std::fs::read_to_string(&first).unwrap(), "first canonical");
+}
+
+#[test]
+fn repo_sync_from_store_requires_confirmation_only_when_writing() {
+    use crate::plan::item_sync::SyncOutcome;
+
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let file_path = repo_dir.path().join("from-store-confirmation.txt");
+    std::fs::write(&file_path, "canonical").unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    ctx.config.materialization = MaterializationStrategy::Copy;
+    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+
+    std::fs::write(&file_path, "repo edit").unwrap();
+    assert!(matches!(
+        ops::repo_sync::sync_repo_report(
+            &mut ctx,
+            RepoSyncRequest {
+                direction: SyncDirection::FromStore,
+                dry_run: false,
+                confirmed: false,
+            },
+            &ignore,
+        ),
+        Err(AppError::SyncConfirmationRequired)
+    ));
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "repo edit");
+
+    let report = ops::repo_sync::sync_repo_report(
+        &mut ctx,
+        RepoSyncRequest {
+            direction: SyncDirection::FromStore,
+            dry_run: false,
+            confirmed: true,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert!(!report.halted);
+    assert_eq!(report.items.len(), 1);
+    assert_eq!(
+        report.items[0].outcome,
+        Some(SyncOutcome::SynchronizedFromStore)
+    );
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "canonical");
+
+    // No overwrite action remains, so this direction no longer requires --yes.
+    let noop_report = ops::repo_sync::sync_repo_report(
+        &mut ctx,
+        RepoSyncRequest {
+            direction: SyncDirection::FromStore,
+            dry_run: false,
+            confirmed: false,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert!(!noop_report.halted);
+    assert_eq!(noop_report.items.len(), 1);
+    assert_eq!(
+        noop_report.items[0].outcome,
+        Some(SyncOutcome::AlreadySynchronized)
+    );
+}
+
+#[test]
+fn repo_sync_from_repo_noop_and_dry_run_do_not_require_confirmation() {
+    use crate::plan::item_sync::SyncOutcome;
+
+    let repo_dir = common::init_git_repo();
+    let store_dir = TempDir::new().unwrap();
+    let file_path = repo_dir.path().join("from-repo-noop.txt");
+    std::fs::write(&file_path, "equal").unwrap();
+    let link = DefaultLinkStrategy;
+    let ignore = GitInfoExclude;
+    let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
+    ctx.config.materialization = MaterializationStrategy::Copy;
+    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+
+    let dry_run = ops::repo_sync::sync_repo_report(
+        &mut ctx,
+        RepoSyncRequest {
+            direction: SyncDirection::FromRepo,
+            dry_run: true,
+            confirmed: false,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert!(!dry_run.halted);
+    assert_eq!(dry_run.items.len(), 1);
+    assert_eq!(
+        dry_run.items[0].outcome,
+        Some(SyncOutcome::AlreadySynchronized)
+    );
+
+    let executed = ops::repo_sync::sync_repo_report(
+        &mut ctx,
+        RepoSyncRequest {
+            direction: SyncDirection::FromRepo,
+            dry_run: false,
+            confirmed: false,
+        },
+        &ignore,
+    )
+    .unwrap();
+    assert!(!executed.halted);
+    assert_eq!(executed.items.len(), 1);
+    assert_eq!(
+        executed.items[0].outcome,
+        Some(SyncOutcome::AlreadySynchronized)
+    );
 }
 
 #[test]

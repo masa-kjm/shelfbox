@@ -11,8 +11,9 @@ use crate::plan::item_sync::{ItemSyncPlan, SyncDirection, SyncOutcome};
 pub struct RepoSyncRequest {
     pub direction: SyncDirection,
     pub dry_run: bool,
-    /// Required only when at least one `FromRepo` item would update canonical
-    /// content. Dry-runs and all-no-op plans do not require confirmation.
+    /// Required only when the selected direction would overwrite at least one
+    /// regular-copy target. Dry-runs and all-no-op plans do not require
+    /// confirmation.
     pub confirmed: bool,
 }
 
