@@ -19,23 +19,61 @@ symlinks.
 
 ## Installation
 
+### Homebrew
+
+```sh
+brew install masa-kjm/tap/shelfbox
+```
+
 ### Pre-built binary
 
-Linux/macOS:
+#### Linux and macOS
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | sh
 ```
 
-Windows PowerShell:
+#### Windows
 
 ```powershell
 irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1 | iex
 ```
 
-### From source
+### Advanced installation
+
+The Unix installer uses `~/.local/bin` by default. The PowerShell installer
+uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin` by default.
+
+To install a specific version or use a custom directory on Linux or macOS:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin sh
+```
+
+Linux installs use the musl binary by default for wider compatibility. To use
+the GNU libc binary instead:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | LINUX_LIBC=gnu sh
+```
+
+To configure the Windows installer, set `VERSION` or `INSTALL_DIR` before
+running it:
+
+```powershell
+$Env:VERSION = "v0.1.0"
+$Env:INSTALL_DIR = "$Env:USERPROFILE\bin"
+irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1 | iex
+```
+
+### Build from source
+
+Clone the repository, then install the CLI from its workspace:
+
+```sh
+git clone https://github.com/masa-kjm/shelfbox.git
+cd shelfbox
 cargo install --path crates/shelfbox
 ```
 

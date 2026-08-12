@@ -2,6 +2,7 @@
 
 Keep AI context files, personal configs, and local secrets **visible in your editor** but **invisible to Git** — surviving reclones, worktrees, and index resets.
 
+> [!NOTE]
 > Supported on **Linux**, **macOS**, and **Windows**.  
 > The default strategy is a symlink; on Windows it requires Developer Mode or an elevated shell.  
 > Copy mode uses regular files and is available where symlink creation is restricted.
@@ -55,40 +56,34 @@ Canonical shelf data is stored under `<store>/repos/<repo-store-dir>/`: `manifes
 
 ## Installation
 
-### Pre-built binary (recommended)
+### Linux and macOS
 
-Linux/macOS:
+#### Homebrew
+
+```sh
+brew install masa-kjm/tap/shelfbox
+```
+
+#### Pre-built binary
+
+The Unix installer uses `~/.local/bin` by default.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | sh
 ```
 
-Windows PowerShell:
+### Windows
+
+#### Pre-built binary
+
+The PowerShell installer uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin` by default.
 
 ```powershell
 irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1 | iex
 ```
 
-The Unix installer uses `~/.local/bin` by default. The PowerShell installer uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin`. To specify a version or directory on Linux/macOS:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | VERSION=v0.1.0 sh
-curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin sh
-```
-
-Linux installs use the musl binary by default for wider compatibility. To use the GNU libc binary instead:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | LINUX_LIBC=gnu sh
-```
-
-### From source
-
-```sh
-cargo install --path crates/shelfbox
-```
-
-Requires Rust 1.75+ and Git.
+> [!TIP]
+> For installer options, building from source, and platform requirements, see [Installation in the Getting Started guide](docs/getting-started.md#installation).
 
 ## More features
 
@@ -112,6 +107,7 @@ Optional config at `~/.config/shelfbox/config.toml` (respects `$XDG_CONFIG_HOME`
 
 The `--store <PATH>` global flag overrides config at runtime.
 
+> [!IMPORTANT]
 > **Note for Windows users:** The default `require` mode depends on directory-level durability guarantees that Windows does not provide. Set `mutation_durability = "best-effort"` to use shelfbox on Windows.
 
 See [Config reference](docs/reference/config-commands.md) for all options and details.
