@@ -144,31 +144,6 @@ The file is moved back into the repository and its materialization is removed.
 
 ---
 
-## Use Copy Mode
-
-Use Copy mode before adding a file when symlink creation is unavailable or a
-regular file is required in the working tree:
-
-```sh
-shelfbox config set materialization copy
-shelfbox item add notes.local.md
-```
-
-The repository file and canonical store file are separate regular files. After
-editing the repository copy, inspect it and choose synchronization direction
-explicitly:
-
-```sh
-shelfbox item status
-shelfbox item sync notes.local.md --from store
-# or: shelfbox item sync notes.local.md --from repo --yes
-```
-
-The `--yes` confirmation is required only when repository content replaces the
-canonical store file. Changing the configuration never converts existing items.
-
----
-
 ## Checking Health
 
 View all managed items:
@@ -188,6 +163,33 @@ Check repository-wide health:
 ```sh
 shelfbox repo status
 ```
+
+---
+
+## Use Copy Mode
+
+Use Copy mode before adding a file when symlink creation is unavailable or a
+regular file is required in the working tree:
+
+> Note: This section assumes a restricted Windows environment where symlink creation is unavailable or blocked, so the examples use Copy mode and the conservative durability settings.
+
+```sh
+shelfbox config set materialization copy
+shelfbox item add notes.local.md
+```
+
+The repository file and canonical store file are separate regular files. After
+editing the repository copy, inspect it and choose synchronization direction
+explicitly:
+
+```sh
+shelfbox item status
+shelfbox item sync notes.local.md --from store
+# or: shelfbox item sync notes.local.md --from repo --yes
+```
+
+The `--yes` confirmation is required only when repository content replaces the
+canonical store file. Changing the configuration never converts existing items.
 
 ---
 

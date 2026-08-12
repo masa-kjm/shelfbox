@@ -76,8 +76,9 @@ Expected result:
 ```text
 1. Clone repository again
 2. Keep or restore the existing repos/
-3. Run: shelfbox store rebuild-index
-4. Enter the new clone
+3. Enter the new clone
+4. If index.json is missing, empty, or was restored on another machine, run:
+   shelfbox store rebuild-index
 5. Run: shelfbox repo reclaim
 6. Select the matching repository
 7. Run: shelfbox repo repair

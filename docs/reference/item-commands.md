@@ -47,9 +47,19 @@ reclaim explicit and does not select or attach a candidate automatically.
 
 **Directory paths:**
 
-When directory shelving is supported, each file under the directory is still
-represented as an independent item. Directory grouping is UI presentation
-derived from `item.path`; no namespace entry is persisted in `manifest.json`.
+Directory paths recursively shelve eligible files below the specified
+directory. Each file is represented as an independent item; directory grouping
+is UI presentation derived from `item.path`, and no namespace entry is
+persisted in `manifest.json`.
+
+```sh
+shelfbox item add secrets/ --dry-run
+shelfbox item add secrets/
+```
+
+Nested Git repositories are not crossed. The command reports eligible files
+that were shelved, skipped, or failed. It processes files independently, so a
+later failure does not roll back earlier successful files.
 
 ---
 
@@ -87,6 +97,21 @@ is never overwritten or deleted by restore; run `item sync --from store` or
 | `--dry-run` | Print what would happen without making changes. |
 | `--keep-ignore` | Do not remove the `.git/info/exclude` entry after restoring. |
 | `--keep-store` | Detach: retain the observed materialization, store item, manifest entry, and exclude, then transition to `detached`. |
+
+**Directory paths:**
+
+Restore all managed items below a directory by specifying it with a trailing
+slash:
+
+```sh
+shelfbox item restore secrets/ --dry-run
+shelfbox item restore secrets/
+```
+
+The command applies the ordinary file restore policy to each selected item.
+Results are reported per file; if a later item fails, earlier successful
+restores remain in effect. `--keep-ignore` and `--keep-store` apply to every
+selected item.
 
 ---
 

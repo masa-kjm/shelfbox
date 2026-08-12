@@ -2,8 +2,6 @@
 
 This directory contains all project documentation.
 
-Choose a document based on what you want to do.
-
 ## Getting Started
 
 ### [Getting Started](./getting-started.md)
@@ -31,6 +29,11 @@ Examples:
 * Move the store to a new location
 * Recover after a repository move
 * Recover after a reclone
+* Keep multiple clones of the same repository separate
+* Use linked Git worktrees
+* Migrate an already-tracked file to local-only management
+* Shelve or restore all eligible files below a directory
+* Audit the store and clean explicitly orphaned data
 * Repair broken materializations
 * Rebuild a lost local index
 
