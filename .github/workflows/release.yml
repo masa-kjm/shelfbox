@@ -174,3 +174,26 @@ jobs:
         with:
           files: artifacts/*
           generate_release_notes: true
+
+  update-homebrew-tap:
+    name: Update Homebrew tap
+    if: github.event_name == 'push'
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Dispatch tap update
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          test -n "$HOMEBREW_TAP_TOKEN"
+          curl -fsSL -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${HOMEBREW_TAP_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/masa-kjm/homebrew-tap/dispatches \
+            -d "{\"event_type\":\"shelfbox-release\",\"client_payload\":{\"version\":\"${VERSION}\"}}"
