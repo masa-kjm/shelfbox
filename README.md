@@ -9,6 +9,8 @@ Keep AI context files, personal configs, and local secrets **visible in your edi
 
 ## Quick Start
 
+![shelfbox overview diagram](demo/shelfbox-overview.svg)
+
 ![shelfbox demo](demo/output/README.gif)
 
 ```sh

@@ -1,0 +1,194 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title description">
+  <title id="title">shelfbox feature overview with core add and restore lifecycle</title>
+  <desc id="description">Overview diagram. The center shows the core lifecycle where item add and item restore change local materialization while canonical content stays in the shelfbox store. Surrounding labels summarize additional features such as copy mode, directory shelving, repo reclaim, repair.</desc>
+
+  <defs>
+    <style>
+      .color-textmain { fill: #f6f8fc; }
+      .color-textsub { fill: #c9f7fb; }
+      .color-textaction { fill: #ffe19a; }
+      .color-textshelfbox { fill: #23d8e7; }
+      .color-strokeshelfbox { stroke: #23d8e7; }
+
+      .text-header { font: 700 56px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.01em; }
+      .text-container { font: 700 56px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.01em; }
+      .text-repo { font: 700 32px Inter, ui-sans-serif, system-ui, sans-serif; }
+      .text-file { font: 700 26px Inter, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .text-descript { font: 500 24px Inter, ui-sans-serif, system-ui, sans-serif; }
+      .text-action { font: 700 30px Inter, ui-sans-serif, system-ui, sans-serif; }
+    </style>
+
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111e"/>
+      <stop offset="0.55" stop-color="#101827"/>
+      <stop offset="1" stop-color="#061018"/>
+    </linearGradient>
+    <linearGradient id="before-heading" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#25365c"/>
+      <stop offset="1" stop-color="#182844"/>
+    </linearGradient>
+    <linearGradient id="after-heading" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#15536c"/>
+      <stop offset="1" stop-color="#123a54"/>
+    </linearGradient>
+    <linearGradient id="shelf" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#55606a"/>
+      <stop offset="0.4" stop-color="#252d35"/>
+      <stop offset="1" stop-color="#11181f"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.38"/>
+    </filter>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#f7be4b"/>
+    </marker>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z"  class="color-textshelfbox"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#background)"/>
+
+  <g id="title-block" transform="translate(0 40)" filter="url(#shadow)">
+    <path d="M40 74H1560" stroke="#56e0f7" stroke-width="3" stroke-linecap="round"/>
+    <text x="60" y="58" class="text-header color-textmain">Core lifecycle view</text>
+  </g>
+
+  <!-- BEFORE: regular file, visible to Git. -->
+  <g id="before-panel" transform="translate(0 100)" filter="url(#shadow)">
+  <!-- <g id="before-panel" transform="translate(38 100)" filter="url(#shadow)"> -->
+    <!-- Before container -->
+    <rect x="38" y="100" width="420" height="650" rx="24" fill="#101c32" stroke="#395eaf" stroke-width="3"/>
+    <path d="M62 100H434a24 24 0 0 1 24 24v94H38v-94a24 24 0 0 1 24-24Z" fill="url(#before-heading)" stroke="#5272bd" stroke-width="2"/>
+    <text x="248" y="183" text-anchor="middle" class="text-container color-textmain">Before</text>
+
+    <!-- repo-A -->
+    <g id="before-repository">
+      <!-- repo-A Container -->
+      <rect x="63" y="258" width="370" height="365" rx="18" fill="#101a2c" stroke="#315798" stroke-width="2"/>
+      <rect x="63" y="258" width="370" height="68" rx="18" fill="#162746"/>
+      <path d="M91 270h22l9 9h28a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8H96a8 8 0 0 1-8-8v-29a8 8 0 0 1 8-8Z" fill="#5793ff"/>
+      <text x="180" y="305" class="text-repo color-textmain">repo-A</text>
+      <!-- local file -->
+      <rect x="86" y="350" width="324" height="116" rx="14" fill="#162641" stroke="#315798" stroke-width="2"/>
+      <g id="before-file-icon" transform="translate(110 373)">
+        <path d="M0 0h37l18 18v60H0Z" fill="#f5f7fb"/>
+        <path d="M37 0v18h18" fill="#d7dfec"/>
+        <path d="M12 37h30M12 48h30M12 59h22" stroke="#8294b2" stroke-width="5" stroke-linecap="round"/>
+      </g>
+      <text x="187" y="421" class="text-file color-textmain">local.md</text>
+      <!-- bar -->
+      <path d="M86 490h324" stroke="#334c75" stroke-width="2"/>
+      <!-- git status -->
+      <g id="before-git-status">
+        <rect x="100" y="530" width="298" height="56" rx="14" fill="#3a1b1b" stroke="#ff6b6b" stroke-width="2"/>
+        <circle cx="128" cy="559" r="16" fill="#ff6b6b"/>
+        <path d="M128 551v11M128 567h0.01" fill="none" stroke="#2a1111" stroke-width="4" stroke-linecap="round"/>
+        <text x="264" y="566" text-anchor="middle" class="text-descript" fill="#ffd9d9">Git status: untracked</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- TRANSITION: the lifecycle operations connect the two states. -->
+  <g id="transition" transform="translate(0 100)">
+    <text x="564" y="380" text-anchor="middle" class="text-action color-textaction">item add</text>
+    <path d="M486 400H642" stroke="#f7be4b" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-amber)"/>
+    <path d="M642 500H486" stroke="#f7be4b" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow-amber)"/>
+    <text x="564" y="540" text-anchor="middle" class="text-action color-textaction">item restore</text>
+  </g>
+
+  <!-- AFTER: the path stays visible while materialization and store ownership are managed. -->
+  <g id="after-panel" transform="translate(0 100)" filter="url(#shadow)">
+  <!-- <g id="after-panel" transform="translate(670 100)" filter="url(#shadow)"> -->
+    <!-- After container -->
+    <rect x="670" y="100" width="890" height="650" rx="24" fill="#0d2030" stroke="#2b9bbb" stroke-width="3"/>
+    <path d="M694 100h842a24 24 0 0 1 24 24v94H670v-94a24 24 0 0 1 24-24Z" fill="url(#after-heading)" stroke="#3bb3d2" stroke-width="2"/>
+    <text x="1115" y="161" text-anchor="middle" class="text-container color-textmain">After</text>
+    <text x="1115" y="203" text-anchor="middle" class="text-action color-textsub">Added in Shelfbox</text>
+
+    <!-- repo-A -->
+    <g id="after-repository" transform="translate(-210 0)">
+      <!-- repo-A Container -->
+      <rect x="905" y="258" width="292" height="470" rx="18" fill="#101a2c" stroke="#315798" stroke-width="2"/>
+      <rect x="905" y="258" width="292" height="68" rx="18" fill="#162746"/>
+      <path d="M933 270h22l9 9h28a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8h-59a8 8 0 0 1-8-8v-29a8 8 0 0 1 8-8Z" fill="#5793ff"/>
+      <text x="1027" y="305" class="text-repo color-textmain">repo-A</text>
+      <!-- local file -->
+      <rect x="928" y="350" width="246" height="116" rx="14" fill="#162641" stroke="#315798" stroke-width="2"/>
+      <g id="after-file-icon" transform="translate(944 371)">
+        <path d="M0 0h30l15 15v54H0Z" fill="#eaf8fa" class="color-strokeshelfbox" stroke-width="2"/>
+        <path d="M30 0v15h15" fill="#c8edf1" class="color-strokeshelfbox" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M12 57v-20 a9 9 0 0 1 10 -10h7" fill="none" class="color-strokeshelfbox" stroke-width="7" stroke-linecap="round"/>
+        <path d="M27 17 l10,10 l-10,10" fill="none" class="color-strokeshelfbox" stroke-width="7" stroke-linecap="round"/>
+      </g>
+      <rect x="1000" y="390" width="159" height="42" rx="14" fill="#0d3a43" class="color-strokeshelfbox" stroke-width="2"/>
+      <text x="1010" y="420" class="text-file color-textmain">local.md</text>
+      <!-- bar -->
+      <path d="M930 490h244" stroke="#334c75" stroke-width="2"/>
+      <!-- .git/info/exclude -->
+      <path d="M1052 473v58" class="color-strokeshelfbox" stroke-width="4" stroke-dasharray="10 4"/>
+      <rect x="932" y="515" width="240" height="52" rx="14" fill="#152745" stroke="#315798" stroke-width="2"/>
+      <text x="1052" y="548" text-anchor="middle" class="text-descript color-textmain">.git/info/exclude</text>
+      <path d="M1052 572v68" class="color-strokeshelfbox" stroke-width="3" stroke-dasharray="10 4" marker-end="url(#arrow-cyan)"/>
+      <text x="1152" y="602" text-anchor="middle" class="color-textshelfbox text-descript">ignored by git</text>
+      <!-- Git status -->
+      <rect x="929" y="648" width="246" height="55" rx="14" fill="#123c31" stroke="#37c782" stroke-width="2"/>
+      <circle cx="954" cy="676" r="16" fill="#2cea82"/>
+      <path d="m946 676 6 6 11-13" fill="none" stroke="#0e2a22" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="1069" y="683" text-anchor="middle" class="text-descript" fill="#d8ffea">Git status: clean</text>
+    </g>
+
+    <!-- Shelfbox store -->
+    <g id="shelfbox-store" filter="url(#shadow)">
+      <g id="shelfbox-store-label">
+        <rect x="1198" y="235" width="329" height="52" rx="13" fill="#10394b" class="color-strokeshelfbox" stroke-width="2"/>
+        <text x="1360" y="275" text-anchor="middle" class="text-repo color-textshelfbox">Shelfbox Store</text>
+      </g>
+      <rect x="1198" y="298" width="329" height="425" rx="7" fill="url(#shelf)" stroke="#87909a" stroke-width="2"/>
+      <rect x="1216" y="312" width="293" height="397" rx="3" fill="#111920" stroke="#091017" stroke-width="3"/>
+      <!-- shelf frame and three open bays -->
+      <path d="M1222 385h281M1222 632h281" stroke="#64717c" stroke-width="12"/>
+      <path d="M1222 385h281M1222 632h281" stroke="#202a33" stroke-width="7"/>
+
+      <!-- Other repositories are implied rather than expanded. -->
+      <g id="other-store-items" opacity="0.52" transform="translate(-40 0)">
+        <path d="M1303 328h23l7 7h22a6 6 0 0 1 6 6v18a6 6 0 0 1-6 6h-52a6 6 0 0 1-6-6v-25a6 6 0 0 1 6-6Z" fill="#71849a"/>
+        <rect x="1368" y="329" width="84" height="11" rx="5" fill="#8090a1"/>
+        <rect x="1368" y="351" width="57" height="9" rx="4" fill="#506170"/>
+        <path d="M1303 654h23l7 7h22a6 6 0 0 1 6 6v18a6 6 0 0 1-6 6h-52a6 6 0 0 1-6-6v-25a6 6 0 0 1 6-6Z" fill="#71849a"/>
+        <rect x="1368" y="655" width="84" height="11" rx="5" fill="#8090a1"/>
+        <rect x="1368" y="677" width="57" height="9" rx="4" fill="#506170"/>
+      </g>
+
+      <!-- The highlighted central bay shows the current repository's real store shape. -->
+      <g id="current-repository-store" transform="translate(1244 400)">
+        <!-- repo-A -->
+        <path d="M0 37h22l7 7h20a6 6 0 0 1 6 6v16a6 6 0 0 1-6 6h-49a6 6 0 0 1-6-6v-23a6 6 0 0 1 6-6Z" fill="#f3b83a"/>
+        <text x="74" y="62" class="text-file color-textmain" fill="#f6f0df">repo-A/</text>
+        <!-- hierarchy -->
+        <path d="M23 72v63M23 111h13" fill="none" stroke="#6f8293" stroke-width="3"/>
+        <!-- items/ -->
+        <path d="M53 96h16l6 6h14a5 5 0 0 1 5 5v13a5 5 0 0 1-5 5h-36a5 5 0 0 1-5-5v-19a5 5 0 0 1 5-5Z" fill="#f3b83a"/>
+        <text x="108" y="118" class="text-file color-textmain" fill="#dce7f5">items/</text>
+        <!-- hierarchy -->
+        <path d="M68 142v33M68 161h13" fill="none" stroke="#6f8293" stroke-width="3"/>
+        <!-- local.md -->
+        <path d="M98 147h14l7 7v19h-21Z" fill="#e7ecf5"/>
+        <path d="M102 147v7h7" fill="#cbd5e5"/>
+        <text x="133" y="168" class="text-file color-textmain" fill="#dce7f5">local.md</text>
+      </g>
+    </g>
+
+    <!-- Canonical content link -->
+    <g id="canonical-content-link" transform="translate(948 414)">
+      <path d="M0 0C322 0 190 69 260 123C299 138 330 144 350 144" fill="none" class="color-strokeshelfbox" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow-cyan)"/>
+      <text x="92" y="-16" text-anchor="middle" class="color-textshelfbox text-descript">link to store</text>
+    </g>
+
+  </g>
+
+</svg>
