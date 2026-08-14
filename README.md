@@ -7,9 +7,9 @@ Keep AI context files, personal configs, and local secrets **visible in your edi
 > The default strategy is a symlink; on Windows it requires Developer Mode or an elevated shell.  
 > Copy mode uses regular files and is available where symlink creation is restricted.
 
-## Quick Start
-
 ![shelfbox overview diagram](demo/shelfbox-overview.svg)
+
+## Quick Start
 
 ![shelfbox demo](demo/output/README.gif)
 
