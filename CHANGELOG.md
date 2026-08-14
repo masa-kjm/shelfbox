@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.2
+
+- Added release automation to update the Homebrew tap after publishing tagged artifacts.
+- `repo sync --from store|repo` now requires `--yes` for overwrite operations in both directions.
+- `item repair` now recreates missing parent directories before materialization updates.
+- `item restore` now prunes empty store item directories after cleanup.
+
 ## v0.9.1
 
 - Added `item materialize --strategy symlink|copy` for explicit, atomic conversion of a healthy item materialization. Conversion never changes manifest identity or ownership, and a diverged copy must be synchronized explicitly first.

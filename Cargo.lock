@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "shelfbox"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "shelfbox-core"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "dirs",
  "fd-lock",
