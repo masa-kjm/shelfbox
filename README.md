@@ -39,8 +39,6 @@ The PowerShell installer uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin` by defau
 irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1 | iex
 ```
 
-See [Required setup](#required-setup) for Windows-specific configuration after installation.
-
 #### Required setup
 
 Before using shelfbox on Windows, run:
@@ -56,12 +54,9 @@ The default `require` mode depends on directory-level durability guarantees that
 
 ## Quick Start
 
-> [!NOTE]
-> On Windows, complete the [required durability setup](#required-setup) before running this example.
-
 ![shelfbox demo](demo/output/README.gif)
 
-```console
+```sh
 # Create a local-only file in your repository
 echo "# Local instructions" > AGENTS.local.md
 
