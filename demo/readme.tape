@@ -26,7 +26,7 @@ Enter
 Sleep 1000ms
 Show
 
-Type 'touch AGENTS.local.md'
+Type 'echo "# Local instructions" > AGENTS.local.md'
 Sleep 400ms
 Enter
 Sleep 2200ms

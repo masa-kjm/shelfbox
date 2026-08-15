@@ -47,7 +47,8 @@ uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin` by default.
 To install a specific version or use a custom directory on Linux or macOS:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | VERSION=v0.1.0 sh
+# version format: vMAJOR.MINOR.PATCH
+curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | VERSION=<version> sh
 curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin sh
 ```
 
@@ -62,7 +63,8 @@ To configure the Windows installer, set `VERSION` or `INSTALL_DIR` before
 running it:
 
 ```powershell
-$Env:VERSION = "v0.1.0"
+# version format: vMAJOR.MINOR.PATCH
+$Env:VERSION = "<version>"
 $Env:INSTALL_DIR = "$Env:USERPROFILE\bin"
 irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1 | iex
 ```
