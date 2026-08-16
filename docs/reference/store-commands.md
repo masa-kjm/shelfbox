@@ -1,5 +1,11 @@
 ## `store` — manage the global store
 
+- [`store info`](#store-info)
+- [`store verify`](#store-verify)
+- [`store rebuild-index`](#store-rebuild-index)
+- [`store migrate-manifests`](#store-migrate-manifests)
+- [`store gc`](#store-gc)
+
 ### `store info`
 
 Displays metadata about the global store.

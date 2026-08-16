@@ -1,6 +1,6 @@
 # Module Map
 
-This map describes the v0.9.0 crate and module boundaries.
+This map describes the current crate and module boundaries.
 
 ## Workspace
 

@@ -8,7 +8,10 @@ Keep AI context files, personal configs, and local secrets **visible in your edi
 
 ## Installation
 
-For installer options, building from source, see [Installation in the Getting Started guide](docs/getting-started.md#installation).
+For source builds and installation script options, see the
+[installation guide](docs/guide/installation.md).
+
+To remove shelfbox and optionally clean up its local data, see [Uninstallation](docs/guide/installation.md#uninstallation).
 
 ### Linux and macOS
 
@@ -54,6 +57,8 @@ The default `require` mode depends on directory-level durability guarantees that
 
 ## Quick Start
 
+For an annotated first workflow, see [Start Managing a Local File](docs/guide/workflows.md#start-managing-a-local-file).
+
 ![shelfbox demo](demo/output/README.gif)
 
 ```sh
@@ -80,7 +85,7 @@ shelfbox item list --format plain
 > [!NOTE]
 > The demo focuses on the add and verification flow. Run `shelfbox item restore AGENTS.local.md` afterward to return to the original state.
 > 
-> Shelfbox manages only files that Git does not track. To make an already-tracked file local-only, follow [Make an Already-Tracked File Local Only](docs/workflows.md#make-an-already-tracked-file-local-only).
+> Shelfbox manages only files that Git does not track. To make an already-tracked file local-only, follow [Make an Already-Tracked File Local Only](docs/guide/workflows.md#make-an-already-tracked-file-local-only).
 
 ## Why Shelfbox
 
@@ -132,8 +137,8 @@ Multi-machine sync, secret encryption, and team-shared files are out of scope.
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — installation, basic concepts, and first-time usage
-- [Workflows](docs/workflows.md) — common tasks and recovery procedures  
+- [Installation](docs/guide/installation.md) — installation methods, source builds, and Windows setup
+- [Workflows](docs/guide/workflows.md) — start managing a local file and follow common recovery procedures
 
 See [docs/index.md](docs/index.md) for the full documentation set.
 

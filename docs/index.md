@@ -2,29 +2,27 @@
 
 This directory contains all project documentation.
 
-## Getting Started
+## Guides
 
-### [Getting Started](./getting-started.md)
+### [Installation](./guide/installation.md)
 
-Read this first if you are new to shelfbox.
+Install shelfbox with Homebrew, a pre-built binary, or a source build.
 
 Covers:
 
-* What shelfbox is
-* Installation
-* Basic usage
-* First shelved item
+* Platform requirements
+* Windows setup
+* Advanced installer options
+* Building from source
+* Uninstalling and optional local-data cleanup
 
----
+### [Common Workflows](./guide/workflows.md)
 
-## Common Workflows
-
-### [Common Workflows](./workflows.md)
-
-Task-oriented guides for common operations.
+Task-oriented guides for first-time and common operations.
 
 Examples:
 
+* Start managing a local file
 * Keep a `.env` file out of Git
 * Move the store to a new location
 * Recover after a repository move
@@ -141,11 +139,6 @@ Examples:
 * Repository identity strategy
 * Concurrency and locking
 
-### [v0.9.0 Compatibility Baseline](./architecture/v0.9.0-compatibility-baseline.md)
-
-Executable and documented symlink-mode compatibility contracts preserved by
-Copy mode.
-
 Use the architecture documents when modifying implementation or evaluating design changes.
 
 ---
@@ -154,8 +147,8 @@ Use the architecture documents when modifying implementation or evaluating desig
 
 ### [Copy Mode](./spec/copy-mode.md)
 
-Normative v0.9.0 public copy-materialization policy, including explicit sync
-and durable-recovery rules.
+Normative public copy-materialization policy, including explicit sync and
+durable-recovery rules.
 
 Defines:
 
@@ -198,8 +191,9 @@ Use this document when evaluating recovery behavior or failure handling.
 
 | Goal                           | Document                  |
 | ------------------------------ | ------------------------- |
-| Learn shelfbox                 | [`getting-started.md`](./getting-started.md) |
-| Solve a practical problem      | [`workflows.md`](./workflows.md) |
+| Install shelfbox               | [`guide/installation.md`](./guide/installation.md) |
+| Start managing a local file    | [`guide/workflows.md`](./guide/workflows.md#start-managing-a-local-file) |
+| Solve a practical problem      | [`guide/workflows.md`](./guide/workflows.md) |
 | Understand a command           | [`reference/*`](#command-reference) |
 | Modify implementation          | [`architecture/*`](#architecture) |
 | Implement or review copy mode  | [`spec/copy-mode.md`](./spec/copy-mode.md) |

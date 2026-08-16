@@ -107,7 +107,7 @@ crash. File identity alone is not enough because a file can be modified
 in-place while retaining the same identity. Size and mtime are also not enough:
 same-size rewrites are common, and mtime can change as an operation side effect.
 
-Use SHA-256 as the v0.9.0 recovery safety fingerprint:
+Use SHA-256 as the recovery safety fingerprint:
 
 ```json
 {
@@ -232,7 +232,7 @@ Focused tests lock:
 
 Status has two compatibility layers:
 
-* Legacy Rust/JSON status remains the v0.8.0 symlink shape:
+* Legacy Rust/JSON status remains the symlink shape:
   `path`, `link_exists`, `link_valid`, `store_exists`, `in_exclude`,
   `not_tracked`, and `ok`.
 * Schema v2 is the copy-aware additive shape. It is exposed through
@@ -529,7 +529,7 @@ to platform modules, secure transfer, symlink helpers, and platform-specific
 symlink APIs. It also prevents `LinkStrategy` and direct copy/rename/removal/
 read-link calls from spreading beyond the current symlink-only modules.
 
-The following existing v0.8.0 modules are an explicit pre-migration baseline:
+The following existing modules are an explicit pre-migration baseline:
 `add`, `info`, `integrity`, `move_item`, `relink`, `repair`, `restore`, and
 `status`. Their total `LinkStrategy` references may decrease from the recorded
 ceiling of 30 but may not increase or appear in a new production operation

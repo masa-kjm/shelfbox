@@ -1,5 +1,13 @@
 ## `repo` — manage the current repository's shelf
 
+- [`repo list`](#repo-list)
+- [`repo status`](#repo-status)
+- [`repo reclaim`](#repo-reclaim)
+- [`repo repair`](#repo-repair)
+- [`repo sync --from <store|repo>`](#repo-sync---from-storerepo)
+- [`repo materialize --strategy <symlink|copy>`](#repo-materialize---strategy-symlinkcopy)
+- [`repo gc`](#repo-gc)
+
 ### `repo list`
 
 Lists repositories known to the store.

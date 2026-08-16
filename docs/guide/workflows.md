@@ -2,14 +2,15 @@
 
 This document describes common shelfbox tasks and recovery procedures.
 
-For command details, see the documents under `reference/`.
+For command details, see the documents under [`../reference/`](../reference/).
 
 ---
 
 ## Workflow Index
 
+* Get started
+  * [Start Managing a Local File](#start-managing-a-local-file)
 * Manage local-only files
-  * [Keep a File Out of Git](#keep-a-file-out-of-git)
   * [Make an Already-Tracked File Local Only](#make-an-already-tracked-file-local-only)
   * [Restore a Shelved File](#restore-a-shelved-file)
   * [Shelve or Restore a Directory](#shelve-or-restore-a-directory)
@@ -28,33 +29,58 @@ For command details, see the documents under `reference/`.
 * Recover and maintain the store
   * [Recover After Local Index Loss](#recover-after-local-index-loss)
   * [Move the Store](#move-the-store)
-  * [PC Migration or Store Restore](#pc-migration-or-store-restore)
+  * [Store/Metadata Recovery from repos/](#storemetadata-recovery-from-repos)
   * [Audit the Store and Clean Orphaned Data](#audit-the-store-and-clean-orphaned-data)
   * [Troubleshooting](#troubleshooting)
   * [Advanced Diagnostics](#advanced-diagnostics)
 
 ---
 
-## Keep a File Out of Git
+## Start Managing a Local File
 
-Example:
+Use this workflow to keep an untracked local file available in your repository
+without allowing Git to track it. For a file that Git already tracks, follow
+[Make an Already-Tracked File Local Only](#make-an-already-tracked-file-local-only)
+instead.
+
+Create a local file from the repository root:
 
 ```sh
-shelfbox item add .env
+echo "my local note" > notes.local.md
+git status --short
 ```
 
-The file is moved into the store and excluded from Git.
+Confirm that `notes.local.md` is untracked, then shelve it:
 
-Typical uses:
+```sh
+shelfbox item add notes.local.md
+git status --short
+```
 
-* `.env`
-* AI context files
-* Local notes
-* Machine-specific configuration
+The file no longer appears in Git status. shelfbox moves its canonical content
+to the store, materializes it at the original path as a symlink by default, and
+adds the path to `.git/info/exclude`. Your editor and other tools can continue
+to read the file at its original path.
+
+Verify the managed item:
+
+```sh
+shelfbox item list
+```
+
+To return the file to ordinary repository management, run:
+
+```sh
+shelfbox item restore notes.local.md
+```
+
+Use [Copy Mode and Resolve an Edit](#use-copy-mode-and-resolve-an-edit) when
+symlink creation is unavailable or a regular file is required in the working
+tree.
 
 See:
 
-* `reference/item-commands.md`
+* [`../reference/item-commands.md`](../reference/item-commands.md)
 
 ---
 
@@ -77,7 +103,7 @@ clones will no longer receive this file from Git.
 
 See:
 
-* `reference/item-commands.md`
+* [`../reference/item-commands.md`](../reference/item-commands.md)
 
 ---
 
@@ -93,7 +119,7 @@ Use this when the file should become a normal repository file again.
 
 See:
 
-* `reference/item-commands.md`
+* [`../reference/item-commands.md`](../reference/item-commands.md)
 
 ---
 
@@ -125,7 +151,7 @@ later failure; resolve the reported path and run the command again if needed.
 
 See:
 
-* `reference/item-commands.md`
+* [`../reference/item-commands.md`](../reference/item-commands.md)
 
 ---
 
@@ -145,7 +171,7 @@ the manifest and the shelfbox block in `.git/info/exclude`.
 
 See:
 
-* `reference/item-commands.md`
+* [`../reference/item-commands.md`](../reference/item-commands.md)
 
 ---
 
@@ -188,8 +214,8 @@ of repairing it.
 
 See:
 
-* `reference/item-commands.md`
-* `spec/failure-matrix.md`
+* [`../reference/item-commands.md`](../reference/item-commands.md)
+* [`../spec/failure-matrix.md`](../spec/failure-matrix.md)
 
 ---
 
@@ -218,8 +244,8 @@ canonical ownership safely from loose files under `items/` alone.
 
 See:
 
-* `reference/repo-commands.md`
-* `spec/failure-matrix.md`
+* [`../reference/repo-commands.md`](../reference/repo-commands.md)
+* [`../spec/failure-matrix.md`](../spec/failure-matrix.md)
 
 ---
 
@@ -242,8 +268,8 @@ when the current clone is already associated with the existing `RepoId`.
 
 See:
 
-* `reference/repo-commands.md`
-* `spec/ownership-model.md`
+* [`../reference/repo-commands.md`](../reference/repo-commands.md)
+* [`../spec/ownership-model.md`](../spec/ownership-model.md)
 
 ---
 
@@ -270,8 +296,8 @@ canonical store content.
 
 See:
 
-* `reference/repo-commands.md`
-* `spec/ownership-model.md`
+* [`../reference/repo-commands.md`](../reference/repo-commands.md)
+* [`../spec/ownership-model.md`](../spec/ownership-model.md)
 
 ---
 
@@ -301,9 +327,9 @@ reclone recovery procedure below instead.
 
 See:
 
-* `reference/item-commands.md`
-* `reference/repo-commands.md`
-* `spec/ownership-model.md`
+* [`../reference/item-commands.md`](../reference/item-commands.md)
+* [`../reference/repo-commands.md`](../reference/repo-commands.md)
+* [`../spec/ownership-model.md`](../spec/ownership-model.md)
 
 ---
 
@@ -347,9 +373,9 @@ one rather than to share a shelf between independently used clones.
 
 See:
 
-* `reference/repo-commands.md`
-* `spec/ownership-model.md`
-* `spec/failure-matrix.md`
+* [`../reference/repo-commands.md`](../reference/repo-commands.md)
+* [`../spec/ownership-model.md`](../spec/ownership-model.md)
+* [`../spec/failure-matrix.md`](../spec/failure-matrix.md)
 
 ---
 
@@ -371,10 +397,16 @@ Then update configuration:
 shelfbox config set store /new/location/shelfbox
 ```
 
+Changing the active store does not automatically move repository ownership or
+materializations to the new location. A repository previously managed under a
+different store must be re-associated by restoring the original `repos/` data,
+rebuilding the local index if needed, and then running `repo reclaim` and
+`repo repair`.
+
 See:
 
-* `reference/config-commands.md`
-* `reference/repo-commands.md`
+* [`../reference/config-commands.md`](../reference/config-commands.md)
+* [`../reference/repo-commands.md`](../reference/repo-commands.md)
 
 ---
 
@@ -394,8 +426,8 @@ shelfbox item relink <PATH>
 
 See:
 
-* `reference/item-commands.md`
-* `spec/ownership-model.md`
+* [`../reference/item-commands.md`](../reference/item-commands.md)
+* [`../spec/ownership-model.md`](../spec/ownership-model.md)
 
 ---
 
@@ -469,9 +501,12 @@ state.
 
 ---
 
-## PC Migration or Store Restore
+## Store/Metadata Recovery from repos/
 
-When `repos/` has been restored on another machine or into a fresh store:
+Use this workflow after a PC migration, a reclone, or a local index loss when
+`repos/` under the active store path is still present. It restores the
+canonical repository metadata first, then re-associates the current clone and
+repairs local working-tree state:
 
 ```sh
 shelfbox store rebuild-index
@@ -479,13 +514,22 @@ shelfbox repo reclaim
 shelfbox repo repair
 ```
 
+Run `shelfbox repo reclaim` and `shelfbox repo repair` from the working tree of
+each repository you want to re-associate. Repeat those two commands per
+repository after rebuilding the store index.
+
 This associates the current clone with the selected existing `RepoId` and then
-repairs local symlinks and Git exclude entries.
+repairs local symlinks and Git exclude entries. Keep the original `repos/`
+contents intact until the re-association succeeds; a store move or restore is a
+recovery workflow, not an automatic multi-store migration. If a repository was
+previously managed in another store, do not treat the new store as a shared
+live shelf for the same repo.
 
 See:
 
-* `reference/repo-commands.md`
-* `spec/ownership-model.md`
+* [`../reference/repo-commands.md`](../reference/repo-commands.md)
+* [`../reference/store-commands.md`](../reference/store-commands.md)
+* [`../spec/ownership-model.md`](../spec/ownership-model.md)
 
 ---
 
@@ -514,8 +558,8 @@ Restore those from backup (or repair a manifest manually) before running
 
 See:
 
-* `reference/store-commands.md`
-* `spec/failure-matrix.md`
+* [`../reference/store-commands.md`](../reference/store-commands.md)
+* [`../spec/failure-matrix.md`](../spec/failure-matrix.md)
 
 ---
 
@@ -529,9 +573,9 @@ shelfbox repo status
 
 Then consult:
 
-* `spec/failure-matrix.md`
-* `reference/item-commands.md`
-* `reference/repo-commands.md`
+* [`../spec/failure-matrix.md`](../spec/failure-matrix.md)
+* [`../reference/item-commands.md`](../reference/item-commands.md)
+* [`../reference/repo-commands.md`](../reference/repo-commands.md)
 
 Most recovery procedures begin with repository status and repair operations.
 

@@ -1,5 +1,16 @@
 ## `item` — manage shelved items
 
+- [`item add <PATH>...`](#item-add-path)
+- [`item restore <PATH>...`](#item-restore-path)
+- [`item repair <PATH>...`](#item-repair-path)
+- [`item relink <PATH>...`](#item-relink-path)
+- [`item sync <PATH>... --from <store|repo>`](#item-sync-path---from-storerepo)
+- [`item materialize <PATH>... --strategy <symlink|copy>`](#item-materialize-path---strategy-symlinkcopy)
+- [`item move <OLD> <NEW>`](#item-move-old-new)
+- [`item list`](#item-list)
+- [`item status`](#item-status)
+- [`item info <PATH>`](#item-info-path)
+
 ### `item add <PATH>...`
 
 Shelves one or more files.
@@ -236,9 +247,9 @@ hardlinks, and unexpected filesystem entries. The configured
 | `--strategy <symlink|copy>` | Required target strategy. |
 | `--dry-run` | Print the approved atomic replacement without writing. |
 
-`restore --keep-store` remains the v0.9.1-compatible detach spelling. Use
-`item materialize` when strategy conversion, rather than ownership detachment,
-is intended.
+`restore --keep-store` remains a legacy-compatible detach spelling. Use `item
+materialize` when strategy conversion, rather than ownership detachment, is
+intended.
 
 ---
 

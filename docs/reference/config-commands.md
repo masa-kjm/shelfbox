@@ -1,5 +1,42 @@
 ## `config` — manage configuration
 
+- [Store Selection](#store-selection)
+- [`config list`](#config-list)
+- [`config path`](#config-path)
+- [`config get <KEY>`](#config-get-key)
+- [`config set <KEY> <VALUE>`](#config-set-key-value)
+- [`config explain <KEY>`](#config-explain-key)
+
+### Store Selection
+
+All commands accept the global `--store <PATH>` option:
+
+```sh
+shelfbox --store /tmp/my-store item list
+```
+
+The store location is resolved in this order, from highest to lowest priority:
+
+1. `--store` CLI option
+2. `SHELFBOX_STORE` environment variable
+3. `store` in `config.toml`
+4. Built-in default (`~/.local/share/shelfbox` on Linux)
+
+For example:
+
+```sh
+SHELFBOX_STORE=/work/store shelfbox item list
+```
+
+Changing the active store does not migrate existing repository ownership or
+materializations to a new store. It only changes which store the CLI reads and
+writes. If a repository was previously managed under another store, restore that
+store or rebuild the local index from `repos/`, then run `repo reclaim` and
+`repo repair` to re-associate the current clone. Shelfbox does not support a
+live multi-store workflow for the same repository.
+
+---
+
 ### `config list`
 
 Lists all configuration keys with their current values and origins.
