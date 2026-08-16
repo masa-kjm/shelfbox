@@ -16,7 +16,7 @@ Set TypingSpeed 60ms
 Set CursorBlink false
 Set WindowBar Colorful
 
-Env PS1 "\w $ "
+Env PS1 "sample-repo $ "
 
 # Keep the generated Git repository and its setup out of the recording.
 Hide

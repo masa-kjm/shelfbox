@@ -2,7 +2,7 @@
 
 ## Overview
 
-Keep AI context files, personal configs, and local secrets **visible in your editor** but **invisible to Git** — recoverable after reclones, worktrees, and index resets.
+Keep local files—notes, AI context, personal configs, and secrets—**visible in your editor** but **out of Git**. Store them portably across repositories, worktrees, and reclones.
 
 ![shelfbox overview diagram](demo/shelfbox-overview.svg)
 
@@ -10,7 +10,6 @@ Keep AI context files, personal configs, and local secrets **visible in your edi
 
 For source builds and installation script options, see the
 [installation guide](docs/guide/installation.md).
-
 To remove shelfbox and optionally clean up its local data, see [Uninstallation](docs/guide/installation.md#uninstallation).
 
 ### Linux and macOS
@@ -76,6 +75,9 @@ git status --short
 
 # Show where shelfbox keeps its store
 shelfbox config get store
+
+# symlink to shelfbox store
+ls -l AGENTS.local.md
 
 # List repositories and managed items
 shelfbox repo list --format plain

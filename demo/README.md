@@ -49,9 +49,11 @@ cd sample-repo
 shelfbox item add .env
 ```
 
-The demo container has an isolated `HOME`, so this uses shelfbox's default
-store without touching a real user store. Run `./setup.sh --reset` to recreate
-the disposable sample repository.
+The demo container intentionally uses an isolated `HOME` at `/home/demo`, so
+this uses shelfbox's default store without touching a real user store. The
+recording keeps the prompt minimal and focused on the current directory, so the
+public demo stays readable without extra sandbox metadata. Run
+`./setup.sh --reset` to recreate the disposable sample repository.
 
 After changing Rust sources, rebuild only this lightweight image before
 starting the shell:

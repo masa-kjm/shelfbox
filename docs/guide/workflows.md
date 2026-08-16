@@ -46,14 +46,14 @@ instead.
 Create a local file from the repository root:
 
 ```sh
-echo "my local note" > notes.local.md
+echo "my local note" > local.md
 git status --short
 ```
 
-Confirm that `notes.local.md` is untracked, then shelve it:
+Confirm that `local.md` is untracked, then shelve it:
 
 ```sh
-shelfbox item add notes.local.md
+shelfbox item add local.md
 git status --short
 ```
 
@@ -71,7 +71,7 @@ shelfbox item list
 To return the file to ordinary repository management, run:
 
 ```sh
-shelfbox item restore notes.local.md
+shelfbox item restore local.md
 ```
 
 Use [Copy Mode and Resolve an Edit](#use-copy-mode-and-resolve-an-edit) when
@@ -112,7 +112,7 @@ See:
 Example:
 
 ```sh
-shelfbox item restore .env
+shelfbox item restore local.md
 ```
 
 Use this when the file should become a normal repository file again.
@@ -312,10 +312,10 @@ For example, to keep different local configuration in two clones:
 
 ```sh
 cd ~/src/project-main
-shelfbox item add .env
+shelfbox item add local.md
 
 cd ~/src/project-experiment
-shelfbox item add .env
+shelfbox item add local.md
 ```
 
 Do not run `shelfbox repo reclaim` in the second clone. Reclaim transfers the
@@ -437,7 +437,7 @@ Enable Copy mode before creating a new item when symlinks cannot be created:
 
 ```sh
 shelfbox config set materialization copy
-shelfbox item add .env
+shelfbox item add local.md
 ```
 
 The repository path is then an independent regular file. It remains protected
@@ -446,8 +446,8 @@ choose exactly one direction:
 
 ```sh
 shelfbox item status
-shelfbox item sync .env --from store       # replace the repo copy
-shelfbox item sync .env --from repo --yes  # replace canonical store content
+shelfbox item sync local.md --from store       # replace the repo copy
+shelfbox item sync local.md --from repo --yes  # replace canonical store content
 ```
 
 `item repair`, `item move`, and normal `item restore` refuse to silently
@@ -463,8 +463,8 @@ symlink and a regular Copy. Changing `materialization` configuration alone
 does not convert existing items.
 
 ```sh
-shelfbox item materialize .env --strategy copy
-shelfbox item materialize .env --strategy symlink
+shelfbox item materialize local.md --strategy copy
+shelfbox item materialize local.md --strategy symlink
 ```
 
 The old entry remains in place until a validated replacement is ready. A

@@ -12,7 +12,7 @@
 
       .text-header { font: 700 56px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.01em; }
       .text-container { font: 700 56px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.01em; }
-      .text-repo { font: 700 32px Inter, ui-sans-serif, system-ui, sans-serif; }
+      .text-repo { font: 700 28px Inter, ui-sans-serif, system-ui, sans-serif; }
       .text-file { font: 700 26px Inter, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
       .text-descript { font: 500 24px Inter, ui-sans-serif, system-ui, sans-serif; }
       .text-action { font: 700 30px Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -66,13 +66,13 @@
     <path d="M62 100H434a24 24 0 0 1 24 24v94H38v-94a24 24 0 0 1 24-24Z" fill="url(#before-heading)" stroke="#5272bd" stroke-width="2"/>
     <text x="248" y="183" text-anchor="middle" class="text-container color-textmain">Before</text>
 
-    <!-- repo-A -->
+    <!-- sample-repo -->
     <g id="before-repository">
-      <!-- repo-A Container -->
+      <!-- sample-repo Container -->
       <rect x="63" y="258" width="370" height="365" rx="18" fill="#101a2c" stroke="#315798" stroke-width="2"/>
       <rect x="63" y="258" width="370" height="68" rx="18" fill="#162746"/>
       <path d="M91 270h22l9 9h28a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8H96a8 8 0 0 1-8-8v-29a8 8 0 0 1 8-8Z" fill="#5793ff"/>
-      <text x="180" y="305" class="text-repo color-textmain">repo-A</text>
+      <text x="170" y="305" class="text-repo color-textmain">sample-repo</text>
       <!-- local file -->
       <rect x="86" y="350" width="324" height="116" rx="14" fill="#162641" stroke="#315798" stroke-width="2"/>
       <g id="before-file-icon" transform="translate(110 373)">
@@ -110,13 +110,13 @@
     <text x="1115" y="161" text-anchor="middle" class="text-container color-textmain">After</text>
     <text x="1115" y="203" text-anchor="middle" class="text-action color-textsub">Added in Shelfbox</text>
 
-    <!-- repo-A -->
+    <!-- sample-repo -->
     <g id="after-repository" transform="translate(-210 0)">
-      <!-- repo-A Container -->
+      <!-- sample-repo Container -->
       <rect x="905" y="258" width="292" height="470" rx="18" fill="#101a2c" stroke="#315798" stroke-width="2"/>
       <rect x="905" y="258" width="292" height="68" rx="18" fill="#162746"/>
       <path d="M933 270h22l9 9h28a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8h-59a8 8 0 0 1-8-8v-29a8 8 0 0 1 8-8Z" fill="#5793ff"/>
-      <text x="1027" y="305" class="text-repo color-textmain">repo-A</text>
+      <text x="1012" y="305" class="text-repo color-textmain">sample-repo</text>
       <!-- local file -->
       <rect x="928" y="350" width="246" height="116" rx="14" fill="#162641" stroke="#315798" stroke-width="2"/>
       <g id="after-file-icon" transform="translate(944 371)">
@@ -134,7 +134,7 @@
       <rect x="932" y="515" width="240" height="52" rx="14" fill="#152745" stroke="#315798" stroke-width="2"/>
       <text x="1052" y="548" text-anchor="middle" class="text-descript color-textmain">.git/info/exclude</text>
       <path d="M1052 572v68" class="color-strokeshelfbox" stroke-width="3" stroke-dasharray="10 4" marker-end="url(#arrow-cyan)"/>
-      <text x="1152" y="602" text-anchor="middle" class="color-textshelfbox text-descript">ignored by git</text>
+      <text x="1152" y="602" text-anchor="middle" class="color-textshelfbox text-descript">Keep out of Git</text>
       <!-- Git status -->
       <rect x="929" y="648" width="246" height="55" rx="14" fill="#123c31" stroke="#37c782" stroke-width="2"/>
       <circle cx="954" cy="676" r="16" fill="#2cea82"/>
@@ -166,9 +166,9 @@
 
       <!-- The highlighted central bay shows the current repository's real store shape. -->
       <g id="current-repository-store" transform="translate(1244 400)">
-        <!-- repo-A -->
+        <!-- sample-repo -->
         <path d="M0 37h22l7 7h20a6 6 0 0 1 6 6v16a6 6 0 0 1-6 6h-49a6 6 0 0 1-6-6v-23a6 6 0 0 1 6-6Z" fill="#f3b83a"/>
-        <text x="74" y="62" class="text-file color-textmain" fill="#f6f0df">repo-A/</text>
+        <text x="74" y="62" class="text-file color-textmain" fill="#f6f0df">sample-repo/</text>
         <!-- hierarchy -->
         <path d="M23 72v63M23 111h13" fill="none" stroke="#6f8293" stroke-width="3"/>
         <!-- items/ -->
@@ -186,7 +186,7 @@
     <!-- Canonical content link -->
     <g id="canonical-content-link" transform="translate(948 414)">
       <path d="M0 0C322 0 190 69 260 123C299 138 330 144 350 144" fill="none" class="color-strokeshelfbox" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow-cyan)"/>
-      <text x="92" y="-16" text-anchor="middle" class="color-textshelfbox text-descript">link to store</text>
+      <text x="122" y="-16" text-anchor="middle" class="color-textshelfbox text-descript">Store content</text>
     </g>
 
   </g>

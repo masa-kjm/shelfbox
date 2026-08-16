@@ -13,6 +13,8 @@ FROM debian:bookworm-slim AS verify
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends bash git \
+    && mkdir -p /home/demo \
+    && chmod 0777 /home/demo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/target/release/shelfbox /usr/local/bin/shelfbox
@@ -26,6 +28,8 @@ FROM ghcr.io/charmbracelet/vhs:v0.11.0 AS record
 USER root
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends git \
+    && mkdir -p /home/demo \
+    && chmod 0777 /home/demo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/target/release/shelfbox /usr/local/bin/shelfbox
