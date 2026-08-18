@@ -67,6 +67,13 @@ curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/inst
 
 ### Windows
 
+#### Scoop
+
+```powershell
+scoop bucket add masa-kjm https://github.com/masa-kjm/scoop-bucket
+scoop install shelfbox
+```
+
 #### [Pre-built binary](https://github.com/masa-kjm/shelfbox/releases)
 
 The PowerShell installer uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin` by default.
