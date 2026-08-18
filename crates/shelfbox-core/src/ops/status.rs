@@ -12,9 +12,9 @@ use crate::{
         DefaultMaterializer, InspectionPurpose, MaterializationInspectionRequest,
         MaterializationLocation, Materializer, RepoEntryKind as FsRepoEntryKind,
     },
+    fs::LinkStrategy,
     git,
-    ignore::IgnoreBackend,
-    link::LinkStrategy,
+    git::exclude::IgnoreBackend,
     policy::materialization_policy::evaluate_materialization_status,
     store::manifest::Item,
 };

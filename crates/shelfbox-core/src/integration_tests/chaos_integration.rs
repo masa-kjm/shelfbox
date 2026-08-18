@@ -12,7 +12,7 @@ use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
 use shelfbox_core::{
-    context, ignore::GitInfoExclude, link::DefaultLinkStrategy, ops, ops::integrity::FixResult,
+    context, fs::DefaultLinkStrategy, git::exclude::GitInfoExclude, ops, ops::integrity::FixResult,
 };
 
 use crate::integration_test_common as common;

@@ -19,7 +19,7 @@ use crate::{
         mutation_journal::RepairMutationJournal,
     },
     git,
-    ignore::{GitInfoExclude, IgnoreBackend},
+    git::exclude::{GitInfoExclude, IgnoreBackend},
     plan::item_repair::ItemRepairReport,
     plan::repo_repair::{RepoRepairPlan, RepoRepairSymlinkAction},
     policy::repair_policy::{

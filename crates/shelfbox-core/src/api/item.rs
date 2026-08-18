@@ -36,8 +36,8 @@ pub use crate::{
 use crate::{
     context,
     error::Result,
-    ignore::{GitInfoExclude, IgnoreBackend},
-    link::DefaultLinkStrategy,
+    fs::DefaultLinkStrategy,
+    git::exclude::{GitInfoExclude, IgnoreBackend},
     ops::{
         add, info as info_ops, list as list_ops, materialize as materialize_ops,
         move_item as move_item_ops, path as path_ops, relink as relink_ops, repair as repair_ops,

@@ -18,7 +18,7 @@ use crate::{
     error::{AppError, Result},
     failpoint::{self, Failpoint},
     fs::{platform, secure_transfer},
-    link::{DefaultLinkStrategy, LinkStrategy},
+    fs::{DefaultLinkStrategy, LinkStrategy},
 };
 
 /// Logical endpoints of a repo materialization.

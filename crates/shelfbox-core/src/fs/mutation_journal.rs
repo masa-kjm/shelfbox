@@ -33,7 +33,7 @@ use crate::{
         secure_transfer,
     },
     git,
-    ignore::IgnoreBackend,
+    git::exclude::IgnoreBackend,
     storage::operation_record_store,
 };
 

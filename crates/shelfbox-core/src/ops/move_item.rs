@@ -22,6 +22,7 @@ use crate::{
         recovery_fingerprint::RecoveryFingerprint,
     },
     error::{AppError, Result},
+    fs::LinkStrategy,
     fs::{
         canonical_transfer::{
             CanonicalEntryKind, CanonicalInspectionPurpose, CanonicalTransfer,
@@ -36,8 +37,7 @@ use crate::{
         mutation_journal::AddMutationJournal,
     },
     git,
-    ignore::IgnoreBackend,
-    link::LinkStrategy,
+    git::exclude::IgnoreBackend,
     plan::item_move::{ItemMovePlan, ItemMoveReport, ItemMoveWarning},
     storage::operation_record_store,
     store::manifest,

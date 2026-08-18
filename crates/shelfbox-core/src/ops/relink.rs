@@ -18,6 +18,7 @@ use crate::{
     },
     error::{AppError, Result},
     failpoint::{self, Failpoint},
+    fs::LinkStrategy,
     fs::{
         canonical_transfer::{
             CanonicalEntryKind, CanonicalInspectionPurpose, CanonicalTransfer,
@@ -32,8 +33,7 @@ use crate::{
         mutation_journal::{AddMutationJournal, RepairMutationJournal},
     },
     git,
-    ignore::{GitInfoExclude, IgnoreBackend},
-    link::LinkStrategy,
+    git::exclude::{GitInfoExclude, IgnoreBackend},
     plan::item_relink::{ItemRelinkPlan, ItemRelinkReport},
     storage::operation_record_store,
     store::manifest::{self, OwnershipState},

@@ -21,7 +21,7 @@ use crate::{
     },
     error::Result,
     fs::materializer::DefaultMaterializer,
-    ignore::GitInfoExclude,
+    git::exclude::GitInfoExclude,
     store::{
         index, manifest,
         scanner::{self, ScanError},

@@ -38,8 +38,10 @@ use crate::{
         },
         mutation_journal::SyncMutationJournal,
     },
-    git,
-    ignore::IgnoreBackend,
+    git::{
+        self,
+        exclude::{GitInfoExclude, IgnoreBackend},
+    },
     plan::item_sync::{
         ItemSyncAction, ItemSyncPlan, ItemSyncReport, ItemSyncRequest, SyncDirection, SyncOutcome,
     },
@@ -649,7 +651,7 @@ fn collect_recovery_facts(
         purpose: InspectionPurpose::PostCommit,
     })?;
     let integrated = !git::is_tracked(repo_root, &repo_root.join(repo_path.as_str()))?
-        && crate::ignore::GitInfoExclude.has_entry(repo_root, repo_path.as_str())?;
+        && GitInfoExclude.has_entry(repo_root, repo_path.as_str())?;
     if !integrated
         || facts.repo_entry_kind != RepoEntryKind::RegularFile
         || !facts.hardlink_free

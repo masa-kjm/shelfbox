@@ -9,7 +9,7 @@ use crate::{
     context::RepoContext,
     domain::ownership::OwnershipState,
     error::{AppError, Result},
-    ignore::IgnoreBackend,
+    git::exclude::IgnoreBackend,
     plan::{
         item_sync::{ItemSyncAction, SyncDirection},
         repo_sync::{RepoSyncItemReport, RepoSyncPlan, RepoSyncReport, RepoSyncRequest},

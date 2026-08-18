@@ -1,7 +1,7 @@
 //! Core library for shelfbox.
 //!
 //! The public operational boundary is [`api`]. Lower-level context,
-//! operation, storage, Git, ignore, link, filesystem, and policy modules are
+//! operation, storage, Git, filesystem, and policy modules are
 //! crate-private implementation details.
 
 pub mod api;
@@ -12,8 +12,6 @@ pub mod error;
 pub(crate) mod failpoint;
 pub(crate) mod fs;
 pub(crate) mod git;
-pub(crate) mod ignore;
-pub(crate) mod link;
 pub(crate) mod ops;
 pub mod plan;
 pub(crate) mod policy;

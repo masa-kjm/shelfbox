@@ -11,7 +11,7 @@ use crate::{
         DefaultMaterializer, InspectionPurpose, MaterializationInspectionRequest,
         MaterializationLocation, Materializer, RepoEntryKind,
     },
-    link::LinkStrategy,
+    fs::LinkStrategy,
     ops::path::repo_relative_string,
 };
 

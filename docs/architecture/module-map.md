@@ -75,10 +75,11 @@ storage
 store
   Crate-private compatibility namespace over storage modules
 
-fs, git, ignore, link
-  Filesystem, Git, ignore-file, and symlink adapters. `fs::materializer` and
-  `fs::canonical_transfer` are crate-private operation-facing ports; concrete
-  adapters are composed outside `ops/`.
+fs, git
+  Filesystem, Git, ignore-file, and symlink adapters. `fs::materializer`,
+  `fs::canonical_transfer`, and the legacy `fs::{LinkStrategy,
+  DefaultLinkStrategy}` re-exports are crate-private operation-facing ports;
+  concrete adapters are composed outside `ops/`.
 
 fs/platform
   Private no-follow, identity, link-count, atomic-replacement, and durability
@@ -98,8 +99,8 @@ shelfbox::commands
     -> ops
       -> policy
       -> storage/store
-      -> fs::materializer / fs::canonical_transfer / git / ignore
-        -> fs/link/secure transfer/platform adapters
+      -> fs::materializer / fs::canonical_transfer / fs::{LinkStrategy, DefaultLinkStrategy} / git
+        -> fs::symlink / secure transfer / platform adapters
     -> domain / plan / error
 ```
 
