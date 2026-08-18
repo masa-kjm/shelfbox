@@ -99,11 +99,19 @@ shelfbox config path
 > [!IMPORTANT]
 > The store contains the canonical content of managed items. Restore every item you want to keep with `shelfbox item restore <PATH>`, or back up the store, before deleting it. Removing a store without restoring its items permanently removes their canonical content and leaves their repository materializations unusable.
 
-Remove the executable with the tool that installed it.
+Remove the executable with the tool that installed it.  
+
 For Homebrew, run:
 
 ```sh
 brew uninstall masa-kjm/tap/shelfbox
+```
+
+For Scoop, run:
+
+```powershell
+scoop uninstall shelfbox
+scoop bucket rm masa-kjm
 ```
 
 For a pre-built binary, remove the executable from the installation directory.  
