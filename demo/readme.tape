@@ -16,7 +16,7 @@ Set TypingSpeed 60ms
 Set CursorBlink false
 Set WindowBar Colorful
 
-Env PS1 "sample-repo $ "
+Env PS1 "sample-repo$ "
 
 # Keep the generated Git repository and its setup out of the recording.
 Hide
@@ -41,22 +41,12 @@ Sleep 400ms
 Enter
 Sleep 2200ms
 
+Type "cat AGENTS.local.md"
+Sleep 400ms
+Enter
+Sleep 2200ms
+
 Type "git status --short"
-Sleep 400ms
-Enter
-Sleep 2200ms
-
-Type "shelfbox config get store"
-Sleep 400ms
-Enter
-Sleep 2200ms
-
-Type "ls -l AGENTS.local.md"
-Sleep 400ms
-Enter
-Sleep 2200ms
-
-Type "shelfbox repo list --format plain"
 Sleep 400ms
 Enter
 Sleep 2200ms

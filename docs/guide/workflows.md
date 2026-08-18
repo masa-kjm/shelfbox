@@ -54,18 +54,30 @@ Confirm that `local.md` is untracked, then shelve it:
 
 ```sh
 shelfbox item add local.md
+```
+
+The file remains available at its original path:
+
+```sh
+cat local.md
+```
+
+But Git no longer reports it:
+
+```sh
 git status --short
 ```
 
-The file no longer appears in Git status. shelfbox moves its canonical content
-to the store, materializes it at the original path as a symlink by default, and
-adds the path to `.git/info/exclude`. Your editor and other tools can continue
-to read the file at its original path.
+shelfbox moves the canonical content to its store, materializes it at the
+original path as a symlink by default, and adds the path to
+.git/info/exclude. Your editor and other tools can continue to use the file
+at the same path.
 
-Verify the managed item:
+Verify that shelfbox is managing the item and repository:
 
 ```sh
 shelfbox item list
+shelfbox repo list
 ```
 
 To return the file to ordinary repository management, run:
@@ -73,10 +85,6 @@ To return the file to ordinary repository management, run:
 ```sh
 shelfbox item restore local.md
 ```
-
-Use [Copy Mode and Resolve an Edit](#use-copy-mode-and-resolve-an-edit) when
-symlink creation is unavailable or a regular file is required in the working
-tree.
 
 See:
 

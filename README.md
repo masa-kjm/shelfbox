@@ -2,61 +2,23 @@
 
 ## Overview
 
-Keep local files—notes, AI context, personal configs, and secrets—**visible in your editor** but **out of Git**. Store them portably across repositories, worktrees, and reclones.
+Keep local files—notes, AI context, and personal configs—**visible in your editor** but **out of Git**. Store them portably across repositories, worktrees, and reclones.
 
 ![shelfbox overview diagram](demo/shelfbox-overview.svg)
 
-## Installation
+## Why Shelfbox
 
-For source builds and installation script options, see the
-[installation guide](docs/guide/installation.md).
-To remove shelfbox and optionally clean up its local data, see [Uninstallation](docs/guide/installation.md#uninstallation).
+Local AI context files, notes, scripts, and machine-specific files often need to live inside a repository tree so editors and tools can discover them—but they shouldn't be committed.
 
-### Linux and macOS
+**Common workarounds have limits:**
 
-#### Homebrew
+- **`.gitignore`** — works for untracked files, but it is shared repository policy rather than a personal local-file mechanism.
+- **`.git/info/exclude`** — keeps ignore rules local, but only records paths. It does not preserve the files themselves or help restore them after a reclone.
+- **Manual move-and-symlink setups** — keep files outside the repository, but leave ownership, recovery, and cleanup to the user.
 
-```sh
-brew install masa-kjm/tap/shelfbox
-```
-
-#### Pre-built binary
-
-The Unix installer uses `~/.local/bin` by default.
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | sh
-```
-
-### Windows
-
-> [!IMPORTANT]
-> Before first use, Windows requires [additional setup](#required-setup).
-
-#### Pre-built binary
-
-The PowerShell installer uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin` by default.
-
-```powershell
-irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1 | iex
-```
-
-#### Required setup
-
-Before using shelfbox on Windows, run:
-
-```powershell
-shelfbox config set mutation_durability best-effort
-```
-
-The default `require` mode depends on directory-level durability guarantees that Windows does not provide.
-
-> [!NOTE]
-> The default materialization strategy uses symlinks, which require Developer Mode or an elevated shell on Windows. Use [copy mode](docs/spec/copy-mode.md) when symlink creation is restricted.
+Shelfbox manages that lifecycle explicitly: it stores canonical content outside the repository, materializes files at their original paths, keeps them excluded from Git, and can repair or recover that local context across worktrees and after recloning.
 
 ## Quick Start
-
-For an annotated first workflow, see [Start Managing a Local File](docs/guide/workflows.md#start-managing-a-local-file).
 
 ![shelfbox demo](demo/output/README.gif)
 
@@ -70,53 +32,65 @@ git status --short
 # Shelve it (keeps the path visible, stores canonical content outside Git)
 shelfbox item add AGENTS.local.md
 
+# The file remains available at its original path
+cat AGENTS.local.md
+
 # Confirm Git no longer reports it
 git status --short
 
-# Show where shelfbox keeps its store
-shelfbox config get store
-
-# symlink to shelfbox store
-ls -l AGENTS.local.md
-
-# List repositories and managed items
-shelfbox repo list --format plain
+# Confirm shelfbox is managing it
 shelfbox item list --format plain
 ```
 
-> [!NOTE]
-> The demo focuses on the add and verification flow. Run `shelfbox item restore AGENTS.local.md` afterward to return to the original state.
+For an annotated first workflow, see [Start Managing a Local File](docs/guide/workflows.md#start-managing-a-local-file).
+
+## Installation
+
+For source builds and installation script options, see the [installation guide](docs/guide/installation.md).  
+To remove shelfbox and optionally clean up its local data, see [Uninstallation](docs/guide/installation.md#uninstallation).
+
+### Linux and macOS
+
+#### Homebrew
+
+```sh
+brew install masa-kjm/tap/shelfbox
+```
+
+#### [Pre-built binary](https://github.com/masa-kjm/shelfbox/releases)
+
+The Unix installer uses `~/.local/bin` by default.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.sh | sh
+```
+
+### Windows
+
+#### [Pre-built binary](https://github.com/masa-kjm/shelfbox/releases)
+
+The PowerShell installer uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin` by default.
+
+```powershell
+irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1 | iex
+```
+
+> [!IMPORTANT]
+> Windows setup: Before using shelfbox, enable best-effort durability:
 > 
-> Shelfbox manages only files that Git does not track. To make an already-tracked file local-only, follow [Make an Already-Tracked File Local Only](docs/guide/workflows.md#make-an-already-tracked-file-local-only).
-
-## Why Shelfbox
-
-Some files need to stay in your repository tree so editors and tools can discover them, but they must never be committed. shelfbox separates those concerns: files remain visible at their original paths, canonical content is stored outside the repo, and Git stays out of the way.
-
-| File | Why shelve it |
-|---|---|
-| `AGENTS.local.md`, `skills/my-skill/`, etc. | Personal AI assistant instructions |
-| `notes/scratch.md` | Personal development notes |
-| `config/local.yml` | Machine-specific config overrides |
-| `.env` | Local secrets and credentials |
-
-**Common workarounds have limits:**
-
-- **`.gitignore`** — works for untracked files, but it is a shared repository policy. It is not suitable for one person's local paths unless the team chooses to commit that rule.
-- **`.git/info/exclude`** — keeps ignore rules local, but only records paths. It does not preserve canonical content, track ownership, repair broken materializations, or help recover after a reclone or index loss.
-- **`git update-index --skip-worktree`** — applies to tracked files, but its local index state does not survive a reclone, a new worktree, or index reset.
-- **Manual move-and-symlink setups** — work initially, but leave recovery, ownership, and cleanup to the user.
-
-Manual move-and-symlink setups are possible, but they do not provide lifecycle management. shelfbox adds **tracked ownership** and structured recovery: it materializes files at original paths, keeps them excluded via `.git/info/exclude`, and repairs broken materializations, lost repo associations after reclones, and orphaned store entries.
-
-Canonical shelf data is stored under `<store>/repos/<repo-store-dir>/`: `manifest.json` keeps repository and item metadata, and `items/` keeps the actual file contents. See [Data model](docs/architecture/data-model.md) for details.
+> ```powershell
+> shelfbox config set mutation_durability best-effort
+> ```
+> 
+> Windows does not provide the directory-level durability guarantees required by the default require mode.
+> Symlink materialization also requires Developer Mode or an elevated shell. If symlinks are unavailable, use [copy mode](docs/spec/copy-mode.md).
 
 ## More Features
 
-- **Directory shelving** — shelve eligible files under a directory; each file remains an independent item: [`item add <PATH>`](docs/reference/item-commands.md#item-add-path)
 - **Recovery after reclone** — re-associate a new clone with an existing shelf after restoring `repos/`: [`repo reclaim`](docs/reference/repo-commands.md#repo-reclaim)
-- **Store recovery** — rebuild local cache files from canonical manifests: [`store rebuild-index`](docs/reference/store-commands.md#store-rebuild-index)
+- **Directory shelving** — shelve eligible files under a directory; each file remains an independent item: [`item add <PATH>`](docs/reference/item-commands.md#item-add-path)
 - **Copy mode** — leave an independent regular file instead of a symlink, useful when symlink creation is restricted: [Copy mode spec](docs/spec/copy-mode.md)
+- **Store recovery** — rebuild local cache files from canonical manifests: [`store rebuild-index`](docs/reference/store-commands.md#store-rebuild-index)
 
 ## Configuration
 
