@@ -10,4 +10,7 @@ pub(crate) mod permissions;
 #[allow(dead_code)] // D1 spike; consumed by secure transfer in Phase 2.
 pub(crate) mod platform;
 pub(crate) mod secure_transfer;
-pub mod symlink;
+mod symlink;
+
+// Operation-facing symlink port for operations not yet migrated to Materializer.
+pub(crate) use symlink::{DefaultLinkStrategy, LinkStrategy};

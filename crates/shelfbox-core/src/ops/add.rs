@@ -17,6 +17,7 @@ use crate::{
     },
     error::{AppError, Result},
     failpoint::{self, Failpoint},
+    fs::LinkStrategy,
     fs::{
         canonical_transfer::{
             CanonicalEntryKind, CanonicalInspectionPurpose, CanonicalTransfer,
@@ -30,8 +31,7 @@ use crate::{
         mutation_journal::AddMutationJournal,
     },
     git,
-    ignore::IgnoreBackend,
-    link::LinkStrategy,
+    git::exclude::IgnoreBackend,
     plan::item_add::{ItemAddPlan, ItemAddReport},
     policy::item_validation::{self, DirectoryCandidateDecision},
     storage::operation_record_store,

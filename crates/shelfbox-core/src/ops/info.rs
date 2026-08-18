@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::{context::RepoContext, error::Result, ignore::IgnoreBackend, link::LinkStrategy};
+use crate::{context::RepoContext, error::Result, fs::LinkStrategy, git::exclude::IgnoreBackend};
 
 use super::path::repo_relative_string;
 

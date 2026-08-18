@@ -16,7 +16,7 @@ use crate::{
     },
     error::{AppError, Result},
     failpoint::{self, Failpoint},
-    ignore::{GitInfoExclude, IgnoreBackend},
+    git::exclude::{GitInfoExclude, IgnoreBackend},
     policy::recovery_policy::{self, RecoveryDecision},
     storage::operation_record_store::{self, ArtifactCleanup},
 };

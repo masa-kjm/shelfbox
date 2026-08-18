@@ -24,7 +24,7 @@ use crate::{
         mutation_journal::RepairMutationJournal,
     },
     git,
-    ignore::IgnoreBackend,
+    git::exclude::IgnoreBackend,
     plan::item_materialize::{
         ItemMaterializeAction, ItemMaterializePlan, ItemMaterializeReport, ItemMaterializeRequest,
         MaterializeOutcome,

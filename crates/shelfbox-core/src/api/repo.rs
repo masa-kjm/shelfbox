@@ -35,8 +35,8 @@ use crate::{
     config::Config,
     context,
     error::Result,
-    ignore::GitInfoExclude,
-    link::DefaultLinkStrategy,
+    fs::DefaultLinkStrategy,
+    git::exclude::GitInfoExclude,
     ops::{detect_transitions, integrity, reclaim, repair, repo_materialize, repo_sync},
     store::{index, manifest},
 };

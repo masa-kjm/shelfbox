@@ -8,7 +8,7 @@ use crate::{
     context::RepoContext,
     domain::ownership::OwnershipState,
     error::Result,
-    ignore::IgnoreBackend,
+    git::exclude::IgnoreBackend,
     plan::{
         item_materialize::MaterializeOutcome,
         repo_materialize::{

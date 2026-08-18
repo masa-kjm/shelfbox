@@ -25,7 +25,7 @@ use crate::{
     },
     fs::mutation_journal::AddMutationJournal,
     git,
-    ignore::{GitInfoExclude, IgnoreBackend},
+    git::exclude::{GitInfoExclude, IgnoreBackend},
     policy::recovery_policy::{
         self, AddExcludeFact, AddManifestFact, AddRecoveryFacts, AddRepoFact, AddStoreFact,
         RecoveryDecision, RecoveryForward, RecoveryRollback,

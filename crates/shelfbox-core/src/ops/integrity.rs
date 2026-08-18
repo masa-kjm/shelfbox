@@ -7,7 +7,8 @@ use serde::Serialize;
 
 use super::status::{self, ItemStatus, ItemStatusV2, StatusOptions};
 use crate::{
-    context::RepoContext, error::Result, ignore::IgnoreBackend, link::LinkStrategy, store::index,
+    context::RepoContext, error::Result, fs::LinkStrategy, git::exclude::IgnoreBackend,
+    store::index,
 };
 
 #[cfg(test)]

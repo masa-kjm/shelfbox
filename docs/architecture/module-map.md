@@ -75,10 +75,12 @@ storage
 store
   Crate-private compatibility namespace over storage modules
 
-fs, git, ignore, link
+fs, git
   Filesystem, Git, ignore-file, and symlink adapters. `fs::materializer` and
-  `fs::canonical_transfer` are crate-private operation-facing ports; concrete
-  adapters are composed outside `ops/`.
+  `fs::canonical_transfer` are crate-private operation-facing ports. The legacy
+  `fs::LinkStrategy` trait remains the transitional boundary used by `ops/`.
+  `fs::DefaultLinkStrategy` is the concrete, platform-aware adapter selected at
+  the API/composition root rather than being constructed inside `ops/`.
 
 fs/platform
   Private no-follow, identity, link-count, atomic-replacement, and durability
@@ -95,16 +97,19 @@ public exports.
 ```text
 shelfbox::commands
   -> shelfbox_core::api
+    -> fs::DefaultLinkStrategy
     -> ops
       -> policy
       -> storage/store
-      -> fs::materializer / fs::canonical_transfer / git / ignore
-        -> fs/link/secure transfer/platform adapters
+      -> fs::materializer / fs::canonical_transfer / fs::LinkStrategy / git
+        -> fs::symlink / secure transfer / platform adapters
     -> domain / plan / error
 ```
 
 Policy code should not perform I/O. Storage code should not own command
 semantics. CLI code should not decide core safety rules. Operations orchestrate
 typed actions and durable phases but do not construct concrete adapters or use
-platform, symlink, or secure-transfer helpers directly. This keeps behavior
+platform, symlink, or secure-transfer helpers directly. `LinkStrategy` remains
+an operation-facing legacy trait, while `DefaultLinkStrategy` is the API-owned
+composition root that selects the concrete platform adapter. This keeps behavior
 testable and keeps public API changes intentional.

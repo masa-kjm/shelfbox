@@ -4,8 +4,8 @@ use tempfile::TempDir;
 
 use shelfbox_core::{
     context,
-    ignore::{GitInfoExclude, IgnoreBackend},
-    link::{DefaultLinkStrategy, LinkStrategy},
+    fs::{DefaultLinkStrategy, LinkStrategy},
+    git::exclude::{GitInfoExclude, IgnoreBackend},
     ops,
     store::{
         index,

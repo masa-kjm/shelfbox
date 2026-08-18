@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use tempfile::TempDir;
 
-use shelfbox_core::{context, ignore::GitInfoExclude, link::DefaultLinkStrategy, ops};
+use shelfbox_core::{context, fs::DefaultLinkStrategy, git::exclude::GitInfoExclude, ops};
 
 use crate::integration_test_common as common;
 

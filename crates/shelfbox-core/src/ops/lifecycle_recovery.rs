@@ -30,7 +30,7 @@ use crate::{
         },
         mutation_journal::AddMutationJournal,
     },
-    ignore::{GitInfoExclude, IgnoreBackend},
+    git::exclude::{GitInfoExclude, IgnoreBackend},
     policy::recovery_policy::{
         self, DirectionalRelinkContentFact, DirectionalRelinkExcludeFact,
         DirectionalRelinkManifestFact, DirectionalRelinkRecoveryFacts, MoveExcludeFact,
