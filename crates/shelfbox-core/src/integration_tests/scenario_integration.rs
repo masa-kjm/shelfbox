@@ -39,7 +39,7 @@ fn reclone_starts_fresh_while_preserving_old_store() {
         context::build_create_or_load(original_repo.path(), Some(store_dir.path())).unwrap();
     let original_id = ctx.repo_id.clone();
     let original_store = ctx.repo_store.clone();
-    ops::add::add_report(
+    common::add_report(
         &mut ctx,
         &secret,
         false,
@@ -98,7 +98,7 @@ fn matching_remote_does_not_reclaim_repo_id_automatically() {
     let mut ctx =
         context::build_create_or_load(original_repo.path(), Some(store_dir.path())).unwrap();
     let original_id = ctx.repo_id.clone();
-    ops::add::add_report(
+    common::add_report(
         &mut ctx,
         &secret,
         false,
@@ -147,7 +147,7 @@ fn item_add_updates_identity_hints_without_absolute_paths() {
     std::fs::write(&secret, "sensitive data").unwrap();
 
     let mut ctx = context::build_create_or_load(repo.path(), Some(store_dir.path())).unwrap();
-    ops::add::add_report(
+    common::add_report(
         &mut ctx,
         &secret,
         false,
@@ -213,7 +213,7 @@ fn repo_rename_creates_new_index_entry_and_preserves_store() {
     let mut ctx = context::build_create_or_load(&api_path, Some(store_dir.path())).unwrap();
     let original_id = ctx.repo_id.clone();
     let original_store = ctx.repo_store.clone();
-    ops::add::add_report(
+    common::add_report(
         &mut ctx,
         &secret,
         false,
@@ -285,7 +285,7 @@ fn concurrent_adds_serialize_via_lock() {
 
     let handle = std::thread::spawn(move || {
         let mut ctx = context::build_create_or_load(&repo_path, Some(&store_path)).unwrap();
-        ops::add::add_report(
+        common::add_report(
             &mut ctx,
             &file2_path,
             false,
@@ -298,7 +298,7 @@ fn concurrent_adds_serialize_via_lock() {
     // Main thread shelves the first file (may block briefly while the other
     // thread holds the exclusive lock).
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    ops::add::add_report(
+    common::add_report(
         &mut ctx,
         &file1,
         false,

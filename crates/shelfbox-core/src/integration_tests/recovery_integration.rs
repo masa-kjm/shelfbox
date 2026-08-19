@@ -46,7 +46,7 @@ fn add_managed_file(
     let mut ctx = context::build_create_or_load(repo, Some(store)).unwrap();
     let repo_id = ctx.repo_id.clone();
     let repo_store = ctx.repo_store.clone();
-    ops::add::add_report(
+    common::add_report(
         &mut ctx,
         &file_path,
         false,
@@ -106,7 +106,7 @@ fn move_repository_path_reuses_repoid_via_git_common_dir() {
     assert_eq!(moved_ctx.repo_id, repo_id);
     assert_eq!(moved_ctx.git_common_dir, original_common);
 
-    ops::add::add_report(
+    common::add_report(
         &mut moved_ctx,
         &next,
         false,
@@ -144,7 +144,7 @@ fn rename_repository_directory_reuses_repoid_via_git_common_dir() {
     assert_eq!(renamed_ctx.repo_id, repo_id);
     assert_eq!(renamed_ctx.git_common_dir, original_common);
 
-    ops::add::add_report(
+    common::add_report(
         &mut renamed_ctx,
         &next,
         false,
@@ -325,7 +325,7 @@ fn reclaim_rejects_current_repo_with_items_before_mutation() {
         context::build_create_or_load(current.path(), Some(store.path())).unwrap();
     let current_file = current.path().join("current.env");
     std::fs::write(&current_file, "current").unwrap();
-    ops::add::add_report(
+    common::add_report(
         &mut current_ctx,
         &current_file,
         false,

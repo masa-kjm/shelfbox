@@ -8,10 +8,9 @@ use crate::{
     },
     error::{AppError, Result},
     fs::materializer::{
-        DefaultMaterializer, InspectionPurpose, MaterializationInspectionRequest,
-        MaterializationLocation, Materializer, RepoEntryKind,
+        InspectionPurpose, MaterializationInspectionRequest, MaterializationLocation, Materializer,
+        RepoEntryKind,
     },
-    fs::LinkStrategy,
     ops::path::repo_relative_string,
 };
 
@@ -36,7 +35,7 @@ impl ItemRestorePlan {
         abs_path: &Path,
         keep_ignore: bool,
         keep_store: bool,
-        _link: &dyn LinkStrategy,
+        materializer: &dyn Materializer,
     ) -> Result<Self> {
         let path = repo_relative_string(&ctx.repo_root, abs_path)?;
 
@@ -95,8 +94,6 @@ impl ItemRestorePlan {
                     path: store_path.clone(),
                     reason: "restore store path is not normalized",
                 })?;
-        let materializer =
-            DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone());
         let facts = materializer.inspect(MaterializationInspectionRequest {
             location: MaterializationLocation::new(repo_path, store_relative),
             purpose: InspectionPurpose::Planning,

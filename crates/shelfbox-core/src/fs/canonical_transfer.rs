@@ -238,6 +238,11 @@ pub(crate) trait CanonicalTransfer {
         prepared: PreparedCanonicalTransfer,
         journal: &mut dyn MutationJournal,
     ) -> Result<()>;
+
+    /// Removes empty item-directory ancestors after a completed canonical
+    /// removal. This best-effort cleanup is outside the durable transfer
+    /// lifecycle and must not change an otherwise successful operation.
+    fn prune_empty_item_ancestors(&self, repo_store: &Path, item_path: &Path) -> Result<()>;
 }
 
 /// Concrete canonical transfer adapter used by add. It never selects a repo
@@ -735,6 +740,10 @@ impl CanonicalTransfer for DefaultCanonicalTransfer {
         journal: &mut dyn MutationJournal,
     ) -> Result<()> {
         journal.cleanup_prepared_artifact(prepared.context)
+    }
+
+    fn prune_empty_item_ancestors(&self, repo_store: &Path, item_path: &Path) -> Result<()> {
+        DefaultCanonicalTransfer::prune_empty_item_ancestors(self, repo_store, item_path)
     }
 }
 

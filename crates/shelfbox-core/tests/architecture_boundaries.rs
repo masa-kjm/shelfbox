@@ -11,15 +11,15 @@ use std::{
 };
 
 const LEGACY_LINK_STRATEGY_FILES: &[&str] = &[
-    "add.rs",
     "info.rs",
     "integrity.rs",
     "move_item.rs",
     "relink.rs",
     "repair.rs",
-    "restore.rs",
     "status.rs",
 ];
+
+const MIGRATED_OPERATION_PORT_FILES: &[&str] = &["add.rs", "restore.rs"];
 
 const LEGACY_DIRECT_FILESYSTEM_ALLOWLIST: &[(&str, &[&str])] = &[
     ("std::fs::copy(", &["move_item.rs"]),
@@ -59,6 +59,19 @@ fn production_operations_cannot_gain_low_level_materialization_dependencies() {
             );
         }
 
+        if MIGRATED_OPERATION_PORT_FILES.contains(&file_name) {
+            for legacy_dependency in [
+                "LinkStrategy",
+                "DefaultMaterializer",
+                "DefaultCanonicalTransfer",
+            ] {
+                assert!(
+                    !source.contains(legacy_dependency),
+                    "{file_name} depends on `{legacy_dependency}` instead of receiving an operation-facing port"
+                );
+            }
+        }
+
         for forbidden in [
             "crate::fs::platform",
             "fs::platform",
@@ -81,6 +94,16 @@ fn production_operations_cannot_gain_low_level_materialization_dependencies() {
                 );
             }
         }
+    }
+
+    let restore_plan = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/plan/item_restore.rs");
+    let restore_plan_source =
+        fs::read_to_string(&restore_plan).expect("restore plan source must be UTF-8");
+    for legacy_dependency in ["LinkStrategy", "DefaultMaterializer"] {
+        assert!(
+            !restore_plan_source.contains(legacy_dependency),
+            "item_restore plan depends on `{legacy_dependency}` instead of receiving Materializer facts"
+        );
     }
 }
 

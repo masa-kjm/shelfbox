@@ -214,6 +214,14 @@ impl CanonicalTransfer for FakeCanonicalTransfer {
     ) -> Result<()> {
         journal.cleanup_prepared_artifact(prepared.commit_context())
     }
+
+    fn prune_empty_item_ancestors(
+        &self,
+        _repo_store: &std::path::Path,
+        _item_path: &std::path::Path,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 fn orchestrate_materialization(

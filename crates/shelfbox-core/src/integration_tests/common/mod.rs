@@ -10,6 +10,140 @@ use std::sync::OnceLock;
 
 use tempfile::TempDir;
 
+use crate::{
+    context::RepoContext,
+    error::Result,
+    fs::{
+        canonical_transfer::DefaultCanonicalTransfer, materializer::DefaultMaterializer,
+        LinkStrategy,
+    },
+    git::exclude::IgnoreBackend,
+    ops,
+    plan::{item_add::ItemAddReport, item_restore::ItemRestoreReport},
+};
+
+/// Invokes the add operation with concrete ports while preserving legacy test
+/// control over the link adapter.
+#[allow(dead_code)]
+pub fn add_report(
+    ctx: &mut RepoContext,
+    abs_path: &Path,
+    dry_run: bool,
+    link: &dyn LinkStrategy,
+    ignore: &dyn IgnoreBackend,
+) -> Result<ItemAddReport> {
+    let mut materializer = DefaultMaterializer::with_link_strategy(
+        ctx.repo_root.clone(),
+        ctx.config.store.clone(),
+        link,
+    );
+    let mut transfer =
+        DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
+    ops::add::add_report(
+        ctx,
+        abs_path,
+        dry_run,
+        &mut materializer,
+        &mut transfer,
+        ignore,
+    )
+}
+
+/// Invokes directory add with concrete ports while preserving legacy test
+/// control over the link adapter.
+#[allow(dead_code)]
+pub fn add_directory(
+    ctx: &mut RepoContext,
+    abs_dir: &Path,
+    dry_run: bool,
+    link: &dyn LinkStrategy,
+    ignore: &dyn IgnoreBackend,
+) -> Result<ops::add::DirectoryAddResult> {
+    let mut materializer = DefaultMaterializer::with_link_strategy(
+        ctx.repo_root.clone(),
+        ctx.config.store.clone(),
+        link,
+    );
+    let mut transfer =
+        DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
+    ops::add::add_directory(
+        ctx,
+        abs_dir,
+        dry_run,
+        &mut materializer,
+        &mut transfer,
+        ignore,
+    )
+}
+
+/// Invokes the restore operation with concrete ports while preserving legacy
+/// test control over the link adapter.
+#[allow(dead_code)]
+pub fn restore(
+    ctx: &mut RepoContext,
+    abs_path: &Path,
+    dry_run: bool,
+    keep_ignore: bool,
+    keep_store: bool,
+    link: &dyn LinkStrategy,
+    ignore: &dyn IgnoreBackend,
+) -> Result<ItemRestoreReport> {
+    let mut materializer = DefaultMaterializer::with_link_strategy(
+        ctx.repo_root.clone(),
+        ctx.config.store.clone(),
+        link,
+    );
+    let mut transfer =
+        DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
+    let mut ports = ops::restore::RestorePorts {
+        materializer: &mut materializer,
+        transfer: &mut transfer,
+    };
+    ops::restore::restore(
+        ctx,
+        abs_path,
+        dry_run,
+        keep_ignore,
+        keep_store,
+        &mut ports,
+        ignore,
+    )
+}
+
+/// Invokes namespace restore with concrete ports while preserving legacy test
+/// control over the link adapter.
+#[allow(dead_code)]
+pub fn restore_namespace(
+    ctx: &mut RepoContext,
+    ns_path: &str,
+    dry_run: bool,
+    keep_ignore: bool,
+    keep_store: bool,
+    link: &dyn LinkStrategy,
+    ignore: &dyn IgnoreBackend,
+) -> Result<ops::restore::NamespaceRestoreResult> {
+    let mut materializer = DefaultMaterializer::with_link_strategy(
+        ctx.repo_root.clone(),
+        ctx.config.store.clone(),
+        link,
+    );
+    let mut transfer =
+        DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
+    let mut ports = ops::restore::RestorePorts {
+        materializer: &mut materializer,
+        transfer: &mut transfer,
+    };
+    ops::restore::restore_namespace(
+        ctx,
+        ns_path,
+        dry_run,
+        keep_ignore,
+        keep_store,
+        &mut ports,
+        ignore,
+    )
+}
+
 /// Creates a minimal Git repository (no commits) and returns the temp dir.
 ///
 /// Suitable for most ops tests where worktrees are not needed.

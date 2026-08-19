@@ -36,7 +36,10 @@ pub use crate::{
 use crate::{
     context,
     error::Result,
-    fs::DefaultLinkStrategy,
+    fs::{
+        canonical_transfer::DefaultCanonicalTransfer, materializer::DefaultMaterializer,
+        DefaultLinkStrategy,
+    },
     git::exclude::{GitInfoExclude, IgnoreBackend},
     ops::{
         add, info as info_ops, list as list_ops, materialize as materialize_ops,
@@ -44,6 +47,13 @@ use crate::{
         restore, status as status_ops, sync as sync_ops,
     },
 };
+
+fn item_operation_ports(ctx: &RepoContext) -> (DefaultMaterializer, DefaultCanonicalTransfer) {
+    (
+        DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone()),
+        DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone()),
+    )
+}
 
 pub fn build_create_or_load(cwd: &Path, store_override: Option<&Path>) -> Result<RepoContext> {
     context::build_create_or_load(cwd, store_override)
@@ -68,9 +78,16 @@ pub fn build_read_only(cwd: &Path, store_override: Option<&Path>) -> Result<Read
 }
 
 pub fn add_file(ctx: &mut RepoContext, abs_path: &Path, dry_run: bool) -> Result<ItemAddReport> {
-    let link = DefaultLinkStrategy;
+    let (mut materializer, mut transfer) = item_operation_ports(ctx);
     let ignore = GitInfoExclude;
-    add::add_report(ctx, abs_path, dry_run, &link, &ignore)
+    add::add_report(
+        ctx,
+        abs_path,
+        dry_run,
+        &mut materializer,
+        &mut transfer,
+        &ignore,
+    )
 }
 
 pub fn add_directory(
@@ -78,9 +95,16 @@ pub fn add_directory(
     abs_path: &Path,
     dry_run: bool,
 ) -> Result<DirectoryAddResult> {
-    let link = DefaultLinkStrategy;
+    let (mut materializer, mut transfer) = item_operation_ports(ctx);
     let ignore = GitInfoExclude;
-    add::add_directory(ctx, abs_path, dry_run, &link, &ignore)
+    add::add_directory(
+        ctx,
+        abs_path,
+        dry_run,
+        &mut materializer,
+        &mut transfer,
+        &ignore,
+    )
 }
 
 pub fn restore_file(
@@ -90,7 +114,11 @@ pub fn restore_file(
     keep_ignore: bool,
     keep_store: bool,
 ) -> Result<ItemRestoreReport> {
-    let link = DefaultLinkStrategy;
+    let (mut materializer, mut transfer) = item_operation_ports(ctx);
+    let mut ports = restore::RestorePorts {
+        materializer: &mut materializer,
+        transfer: &mut transfer,
+    };
     let ignore = GitInfoExclude;
     restore::restore(
         ctx,
@@ -98,7 +126,7 @@ pub fn restore_file(
         dry_run,
         keep_ignore,
         keep_store,
-        &link,
+        &mut ports,
         &ignore,
     )
 }
@@ -110,7 +138,11 @@ pub fn restore_namespace(
     keep_ignore: bool,
     keep_store: bool,
 ) -> Result<NamespaceRestoreResult> {
-    let link = DefaultLinkStrategy;
+    let (mut materializer, mut transfer) = item_operation_ports(ctx);
+    let mut ports = restore::RestorePorts {
+        materializer: &mut materializer,
+        transfer: &mut transfer,
+    };
     let ignore = GitInfoExclude;
     restore::restore_namespace(
         ctx,
@@ -118,7 +150,7 @@ pub fn restore_namespace(
         dry_run,
         keep_ignore,
         keep_store,
-        &link,
+        &mut ports,
         &ignore,
     )
 }

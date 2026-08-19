@@ -77,7 +77,7 @@ fn worktree_shelved_items_visible_from_linked_worktree() {
     std::fs::write(&file_path, "TOKEN=abc").unwrap();
 
     let mut ctx = context::build_create_or_load(main_dir.path(), Some(store_dir.path())).unwrap();
-    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
     drop(ctx);
 
     // Create a linked worktree.
@@ -125,7 +125,7 @@ fn index_deleted_creates_fresh_context_with_empty_manifest() {
     std::fs::write(&file_path, "secret").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    ops::add::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
     let original_repo_id = ctx.repo_id.clone();
     let original_store = ctx.repo_store.clone();
     drop(ctx);
@@ -239,7 +239,7 @@ fn partial_store_corruption_shows_mixed_status() {
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     for p in &paths {
-        ops::add::add_report(&mut ctx, p, false, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, p, false, &link, &ignore).unwrap();
     }
 
     // Corrupt one store item (simulate partial copy or deletion).

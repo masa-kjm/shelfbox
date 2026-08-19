@@ -485,11 +485,7 @@ constructing an identity precondition themselves.
 and artifact population. It does not own Git/exclude policy, confirmation,
 manifest ownership, durable operation direction, or user-facing reports.
 
-Canonical store movement uses the distinct
-`fs::canonical_transfer::CanonicalTransfer` port. Its `Move` and
-`ReplaceFromRepo` actions name logical canonical endpoints and expected state,
-but never choose rename, copy, or cross-device transfer algorithms. It has the
-same inspect/prepare/commit/abort lifecycle as `Materializer`.
+Canonical store movement uses the distinct `fs::canonical_transfer::CanonicalTransfer` port. Its `Move` and `ReplaceFromRepo` actions name logical canonical endpoints and expected state, but never choose rename, copy, or cross-device transfer algorithms. It has the same inspect/prepare/commit/abort lifecycle as `Materializer`; its separate best-effort empty-item-ancestor cleanup runs only after durable completion.
 
 ### Opaque journal, handles, and permits
 
@@ -529,15 +525,12 @@ to platform modules, secure transfer, symlink helpers, and platform-specific
 symlink APIs. It also prevents `LinkStrategy` and direct copy/rename/removal/
 read-link calls from spreading beyond the current symlink-only modules.
 
-The following existing modules are an explicit pre-migration baseline:
-`add`, `info`, `integrity`, `move_item`, `relink`, `repair`, `restore`, and
-`status`. Their total `LinkStrategy` references may decrease from the recorded
-ceiling of 30 but may not increase or appear in a new production operation
-module. Their narrowly enumerated direct filesystem calls are likewise
-allowlisted only in the existing operation files. Each Phase 3 operation
-migration must remove its legacy allowance; no copy-aware operation may use
-one. This preserves existing symlink behavior while making the dependency
-boundary enforceable now.
+The following existing modules remain an explicit legacy baseline: `info`, `integrity`, `move_item`, `relink`, `repair`, and `status`.
+Their total `LinkStrategy` references may decrease from the recorded ceiling of 30 but may not increase or appear in a new production operation module.
+Their narrowly enumerated direct filesystem calls are likewise allowlisted only in the existing operation files.
+Each Phase 3 operation migration must remove its legacy allowance; no copy-aware operation may use one.
+`add` and `restore` now receive `Materializer` and `CanonicalTransfer` ports, and the source guard rejects their direct use of legacy link strategies or default adapters.
+This preserves existing symlink behavior while making the dependency boundary enforceable now.
 
 ### Prototype tests
 
