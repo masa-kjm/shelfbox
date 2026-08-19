@@ -26,8 +26,16 @@ pub enum ItemCommand {
     /// Return a shelved file to its original location and remove it from the store.
     Restore {
         /// Files to restore (relative to repo root).
-        #[arg(required = true, value_name = "PATH")]
+        #[arg(
+            required_unless_present = "all",
+            conflicts_with = "all",
+            value_name = "PATH"
+        )]
         paths: Vec<PathBuf>,
+
+        /// Restore every managed item in the current repository.
+        #[arg(long, conflicts_with = "paths")]
+        all: bool,
 
         /// Print what would happen without making any changes.
         #[arg(long)]
@@ -178,6 +186,7 @@ pub fn run_item(
         }
         ItemCommand::Restore {
             paths,
+            all,
             dry_run,
             keep_ignore,
             keep_store,
@@ -187,6 +196,7 @@ pub fn run_item(
                 cwd,
                 store_override,
                 &paths,
+                all,
                 dry_run,
                 keep_ignore,
                 keep_store,
@@ -333,13 +343,22 @@ fn build_item_context(
     cwd: &Path,
     store_override: Option<&Path>,
     dry_run: bool,
+    require_existing_repo: bool,
 ) -> Result<item::RepoContext> {
+    let read_only = item::build_read_only(cwd, store_override)
+        .context("failed to validate read-only repo context")?;
+
     if dry_run {
-        let read_only = item::build_read_only(cwd, store_override)
-            .context("failed to initialise read-only repo context")?;
         return read_only
             .repo
             .ok_or_else(|| anyhow::anyhow!("Run `shelfbox repo reclaim` first"));
+    }
+
+    // Verify Git context before constructing the write-capable context.  The
+    // latter may initialize store metadata, while an invalid repository
+    // context must fail without changing the store.
+    if require_existing_repo && read_only.repo.is_none() {
+        return Err(anyhow::anyhow!("Run `shelfbox repo reclaim` first"));
     }
 
     item::build_create_or_load(cwd, store_override).context("failed to initialise repo context")
@@ -497,11 +516,19 @@ fn cmd_restore(
     cwd: &Path,
     store_override: Option<&Path>,
     paths: &[PathBuf],
+    all: bool,
     dry_run: bool,
     keep_ignore: bool,
     keep_store: bool,
 ) -> Result<()> {
-    let mut ctx = build_item_context(cwd, store_override, dry_run)?;
+    let mut ctx = build_item_context(cwd, store_override, dry_run, all)?;
+
+    if all {
+        let result = item::restore_namespace(&mut ctx, "", dry_run, keep_ignore, keep_store)
+            .context("restore all managed items failed")?;
+        print_all_restore_result(&result);
+        return Ok(());
+    }
 
     for path in paths {
         let abs = resolve_path(cwd, path);
@@ -536,6 +563,40 @@ fn cmd_restore(
         }
     }
     Ok(())
+}
+
+/// Prints a human-readable summary of a repository-wide restore operation.
+fn print_all_restore_result(result: &item::NamespaceRestoreResult) {
+    let is_dry_run = result
+        .results
+        .iter()
+        .any(|(_, o)| matches!(o, item::NsRestoreItemOutcome::WouldRestore));
+    let prefix = if is_dry_run { "[dry-run] " } else { "" };
+
+    let restored = result
+        .results
+        .iter()
+        .filter(|(_, o)| {
+            matches!(
+                o,
+                item::NsRestoreItemOutcome::Restored | item::NsRestoreItemOutcome::WouldRestore
+            )
+        })
+        .count();
+    let failed = result
+        .results
+        .iter()
+        .filter(|(_, o)| matches!(o, item::NsRestoreItemOutcome::Failed(_)))
+        .count();
+
+    println!("{prefix}all managed items: {restored} restored, {failed} failed");
+    for (path, outcome) in &result.results {
+        match outcome {
+            item::NsRestoreItemOutcome::Restored => println!("  {prefix}restored: {path}"),
+            item::NsRestoreItemOutcome::WouldRestore => println!("  {prefix}restore: {path}"),
+            item::NsRestoreItemOutcome::Failed(msg) => eprintln!("  fail: {path}: {msg}"),
+        }
+    }
 }
 
 /// Prints a human-readable summary of a namespace restore operation.
@@ -670,7 +731,7 @@ fn cmd_repair(
     dry_run: bool,
     force: bool,
 ) -> Result<()> {
-    let ctx = build_item_context(cwd, store_override, dry_run)?;
+    let ctx = build_item_context(cwd, store_override, dry_run, false)?;
 
     for path in paths {
         let abs = resolve_path(cwd, path);
@@ -724,7 +785,7 @@ fn cmd_sync(
     dry_run: bool,
     yes: bool,
 ) -> Result<()> {
-    let mut ctx = build_item_context(cwd, store_override, dry_run)?;
+    let mut ctx = build_item_context(cwd, store_override, dry_run, false)?;
     let direction = item::SyncDirection::from(from);
 
     for path in paths {
@@ -773,7 +834,7 @@ fn cmd_materialize(
     strategy: MaterializationStrategyArg,
     dry_run: bool,
 ) -> Result<()> {
-    let ctx = build_item_context(cwd, store_override, dry_run)?;
+    let ctx = build_item_context(cwd, store_override, dry_run, false)?;
     let strategy = strategy.into();
 
     for path in paths {
@@ -887,7 +948,7 @@ fn cmd_relink(
     from: Option<RelinkFrom>,
     yes: bool,
 ) -> Result<()> {
-    let mut ctx = build_item_context(cwd, store_override, dry_run)?;
+    let mut ctx = build_item_context(cwd, store_override, dry_run, false)?;
 
     for path in paths {
         let abs = resolve_path(cwd, path);
@@ -950,7 +1011,7 @@ fn cmd_move(
 ) -> Result<()> {
     let old_abs = resolve_path(cwd, old);
     let new_abs = resolve_path(cwd, new_path);
-    let mut ctx = build_item_context(cwd, store_override, dry_run)?;
+    let mut ctx = build_item_context(cwd, store_override, dry_run, false)?;
     let report = item::move_item(&mut ctx, &old_abs, &new_abs, dry_run)
         .with_context(|| format!("move '{}' → '{}' failed", old.display(), new_path.display()))?;
     print_move_report(&report);

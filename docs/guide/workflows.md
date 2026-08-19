@@ -13,6 +13,7 @@ For command details, see the documents under [`../reference/`](../reference/).
 * Manage local-only files
   * [Make an Already-Tracked File Local Only](#make-an-already-tracked-file-local-only)
   * [Restore a Shelved File](#restore-a-shelved-file)
+  * [Restore All Shelved Items](#restore-all-shelved-items)
   * [Shelve or Restore a Directory](#shelve-or-restore-a-directory)
   * [Rename a Shelved Path](#rename-a-shelved-path)
   * [Reattach a Detached Item](#reattach-a-detached-item)
@@ -124,6 +125,32 @@ shelfbox item restore local.md
 ```
 
 Use this when the file should become a normal repository file again.
+
+See:
+
+* [`../reference/item-commands.md`](../reference/item-commands.md)
+
+---
+
+## Restore All Shelved Items
+
+To return every item managed in the current repository to ordinary files, first
+review the selected paths without writing:
+
+```sh
+shelfbox item restore --all --dry-run
+```
+
+Then restore the complete managed set:
+
+```sh
+shelfbox item restore --all
+```
+
+This command is limited to the current repository's manifest; it does not
+restore items from other repositories in the same store. Each item follows the
+ordinary restore safety checks. If an item fails, earlier successful restores
+remain in effect and shelfbox reports the path that needs attention.
 
 See:
 
