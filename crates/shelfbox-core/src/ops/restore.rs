@@ -24,17 +24,14 @@ use crate::{
     },
     error::{AppError, Result},
     failpoint::{self, Failpoint},
-    fs::LinkStrategy,
     fs::{
         canonical_transfer::{
             CanonicalEntryKind, CanonicalInspectionPurpose, CanonicalTransfer,
-            CanonicalTransferAction, CanonicalTransferInspectionRequest, DefaultCanonicalTransfer,
-            ExpectedCanonicalEntry,
+            CanonicalTransferAction, CanonicalTransferInspectionRequest, ExpectedCanonicalEntry,
         },
         materializer::{
-            DefaultMaterializer, InspectionPurpose, MaterializationAction,
-            MaterializationInspectionRequest, MaterializationLocation, Materializer,
-            MutationJournal, RepoEntryKind,
+            InspectionPurpose, MaterializationAction, MaterializationInspectionRequest,
+            MaterializationLocation, Materializer, MutationJournal, RepoEntryKind,
         },
         mutation_journal::AddMutationJournal,
     },
@@ -51,6 +48,12 @@ enum RestoreMaterialization {
     EqualCopy,
 }
 
+/// Filesystem ports required by the durable restore workflow.
+pub(crate) struct RestorePorts<'a> {
+    pub materializer: &'a mut dyn Materializer,
+    pub transfer: &'a mut dyn CanonicalTransfer,
+}
+
 /// Restores `abs_path` as a regular file and removes its canonical store item.
 ///
 /// `restore --keep-store` remains the v0.9.0 legacy detach operation: it
@@ -62,10 +65,11 @@ pub fn restore(
     dry_run: bool,
     keep_ignore: bool,
     keep_store: bool,
-    _link: &dyn LinkStrategy,
+    ports: &mut RestorePorts<'_>,
     ignore: &dyn IgnoreBackend,
 ) -> Result<ItemRestoreReport> {
-    let plan = ItemRestorePlan::build(ctx, abs_path, keep_ignore, keep_store, _link)?;
+    let plan =
+        ItemRestorePlan::build(ctx, abs_path, keep_ignore, keep_store, &*ports.materializer)?;
 
     if dry_run {
         return Ok(ItemRestoreReport {
@@ -76,7 +80,7 @@ pub fn restore(
 
     match plan.action {
         ItemRestoreAction::DetachKeepStore => execute_legacy_detach(ctx, &plan)?,
-        ItemRestoreAction::RestoreFile => execute_restore(ctx, &plan, ignore)?,
+        ItemRestoreAction::RestoreFile => execute_restore(ctx, &plan, ports, ignore)?,
     }
 
     Ok(ItemRestoreReport {
@@ -99,6 +103,7 @@ fn execute_legacy_detach(ctx: &mut RepoContext, plan: &ItemRestorePlan) -> Resul
 fn execute_restore(
     ctx: &mut RepoContext,
     plan: &ItemRestorePlan,
+    ports: &mut RestorePorts<'_>,
     ignore: &dyn IgnoreBackend,
 ) -> Result<()> {
     let _item = ctx.manifest.get(&plan.path).ok_or_else(|| {
@@ -112,7 +117,8 @@ fn execute_restore(
     })?;
     let store_path = store_relative_path(&ctx.config.store, &plan.store_path)?;
     let location = MaterializationLocation::new(repo_path.clone(), store_path.clone());
-    let materialization = inspect_restore_materialization(ctx, &location, &plan.abs_path)?;
+    let materialization =
+        inspect_restore_materialization(&*ports.materializer, &location, &plan.abs_path)?;
 
     if git::is_tracked(&ctx.repo_root, &plan.abs_path)? {
         return Err(AppError::PathIsTracked {
@@ -195,13 +201,14 @@ fn execute_restore(
     );
     journal.ensure_store_destination_parent()?;
 
-    let mut materializer = DefaultMaterializer::new(repo_root.clone(), store_root.clone());
     match materialization {
         RestoreMaterialization::ManagedSymlink => {
-            let facts = materializer.inspect(MaterializationInspectionRequest {
-                location: location.clone(),
-                purpose: InspectionPurpose::PreCommit,
-            })?;
+            let facts = ports
+                .materializer
+                .inspect(MaterializationInspectionRequest {
+                    location: location.clone(),
+                    purpose: InspectionPurpose::PreCommit,
+                })?;
             ensure_restore_facts(
                 &facts,
                 &plan.abs_path,
@@ -211,11 +218,13 @@ fn execute_restore(
                 location: location.clone(),
                 expected: facts.expected(),
             };
-            let prepared = materializer.prepare(action, &mut journal)?;
-            let fresh = materializer.inspect(MaterializationInspectionRequest {
-                location: location.clone(),
-                purpose: InspectionPurpose::PreCommit,
-            })?;
+            let prepared = ports.materializer.prepare(action, &mut journal)?;
+            let fresh = ports
+                .materializer
+                .inspect(MaterializationInspectionRequest {
+                    location: location.clone(),
+                    purpose: InspectionPurpose::PreCommit,
+                })?;
             ensure_restore_facts(
                 &fresh,
                 &plan.abs_path,
@@ -224,13 +233,15 @@ fn execute_restore(
             validate_restore_integration(ctx, plan, ignore)?;
             let permit = journal
                 .issue_commit_permit(fresh.write_precondition_guard(prepared.commit_context()))?;
-            materializer.commit(prepared, permit)?;
+            ports.materializer.commit(prepared, permit)?;
         }
         RestoreMaterialization::EqualCopy => {
-            let facts = materializer.inspect(MaterializationInspectionRequest {
-                location: location.clone(),
-                purpose: InspectionPurpose::PreCommit,
-            })?;
+            let facts = ports
+                .materializer
+                .inspect(MaterializationInspectionRequest {
+                    location: location.clone(),
+                    purpose: InspectionPurpose::PreCommit,
+                })?;
             ensure_restore_facts(&facts, &plan.abs_path, RestoreMaterialization::EqualCopy)?;
             validate_restore_integration(ctx, plan, ignore)?;
         }
@@ -238,14 +249,13 @@ fn execute_restore(
     ensure_regular_matches_store(&plan.abs_path, &plan.store_path, &store_fingerprint)?;
     journal.advance(OperationPhase::RepoRegularized)?;
 
-    let mut transfer = DefaultCanonicalTransfer::new(repo_root.clone(), store_root.clone());
     let inspection = CanonicalTransferAction::Move {
         source: store_path.clone(),
         destination: backup_store_path.clone(),
         expected_source: ExpectedCanonicalEntry::unchecked(CanonicalEntryKind::RegularFile),
         expected_destination: ExpectedCanonicalEntry::unchecked(CanonicalEntryKind::Missing),
     };
-    let planning = transfer.inspect(CanonicalTransferInspectionRequest {
+    let planning = ports.transfer.inspect(CanonicalTransferInspectionRequest {
         action: inspection,
         purpose: CanonicalInspectionPurpose::Planning,
     })?;
@@ -256,8 +266,8 @@ fn execute_restore(
         expected_source: planning.expected_source(),
         expected_destination: planning.expected_destination(),
     };
-    let prepared = transfer.prepare(action.clone(), &mut journal)?;
-    let facts = transfer.inspect(CanonicalTransferInspectionRequest {
+    let prepared = ports.transfer.prepare(action.clone(), &mut journal)?;
+    let facts = ports.transfer.inspect(CanonicalTransferInspectionRequest {
         action: action.clone(),
         purpose: CanonicalInspectionPurpose::PreCommit,
     })?;
@@ -265,7 +275,7 @@ fn execute_restore(
     validate_restore_integration(ctx, plan, ignore)?;
     let permit =
         journal.issue_commit_permit(facts.write_precondition_guard(prepared.commit_context()))?;
-    transfer.commit(prepared, permit)?;
+    ports.transfer.commit(prepared, permit)?;
     let recorded_backup = journal.record_backup_from_path(&backup_path)?;
     journal.advance(OperationPhase::StoreStaged)?;
 
@@ -303,7 +313,9 @@ fn execute_restore(
     // The durable restore is complete. Empty item ancestors are only cosmetic
     // residue, so failures here must not turn a successful restore into an
     // error or affect its recovery state.
-    let _ = transfer.prune_empty_item_ancestors(&ctx.repo_store, &plan.store_path);
+    let _ = ports
+        .transfer
+        .prune_empty_item_ancestors(&ctx.repo_store, &plan.store_path);
 
     Ok(())
 }
@@ -327,11 +339,10 @@ fn validate_restore_integration(
 }
 
 fn inspect_restore_materialization(
-    ctx: &RepoContext,
+    materializer: &dyn Materializer,
     location: &MaterializationLocation,
     abs_path: &Path,
 ) -> Result<RestoreMaterialization> {
-    let materializer = DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     let facts = materializer.inspect(MaterializationInspectionRequest {
         location: location.clone(),
         purpose: InspectionPurpose::Planning,
@@ -474,7 +485,7 @@ pub fn restore_namespace(
     dry_run: bool,
     keep_ignore: bool,
     keep_store: bool,
-    link: &dyn LinkStrategy,
+    ports: &mut RestorePorts<'_>,
     ignore: &dyn IgnoreBackend,
 ) -> Result<NamespaceRestoreResult> {
     let member_paths: Vec<String> = ctx
@@ -504,7 +515,15 @@ pub fn restore_namespace(
     let mut results = Vec::new();
     for member_path in member_paths {
         let abs_path = ctx.repo_root.join(&member_path);
-        match restore(ctx, &abs_path, false, keep_ignore, keep_store, link, ignore) {
+        match restore(
+            ctx,
+            &abs_path,
+            false,
+            keep_ignore,
+            keep_store,
+            ports,
+            ignore,
+        ) {
             Ok(_) => results.push((member_path, NsRestoreItemOutcome::Restored)),
             Err(error) => {
                 results.push((member_path, NsRestoreItemOutcome::Failed(error.to_string())))

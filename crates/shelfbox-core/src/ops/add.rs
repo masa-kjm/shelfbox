@@ -17,16 +17,14 @@ use crate::{
     },
     error::{AppError, Result},
     failpoint::{self, Failpoint},
-    fs::LinkStrategy,
     fs::{
         canonical_transfer::{
             CanonicalEntryKind, CanonicalInspectionPurpose, CanonicalTransfer,
-            CanonicalTransferAction, CanonicalTransferInspectionRequest, DefaultCanonicalTransfer,
+            CanonicalTransferAction, CanonicalTransferInspectionRequest,
         },
         materializer::{
-            DefaultMaterializer, InspectionPurpose, MaterializationAction,
-            MaterializationInspectionRequest, MaterializationLocation, Materializer,
-            MutationJournal, RepoEntryKind,
+            InspectionPurpose, MaterializationAction, MaterializationInspectionRequest,
+            MaterializationLocation, Materializer, MutationJournal, RepoEntryKind,
         },
         mutation_journal::AddMutationJournal,
     },
@@ -54,19 +52,24 @@ pub(crate) fn add_report(
     ctx: &mut RepoContext,
     abs_path: &Path,
     dry_run: bool,
-    link: &dyn LinkStrategy,
+    materializer: &mut dyn Materializer,
+    transfer: &mut dyn CanonicalTransfer,
     ignore: &dyn IgnoreBackend,
 ) -> Result<ItemAddReport> {
-    let plan = build_add_plan(ctx, abs_path)?;
+    let plan = build_add_plan(ctx, abs_path, transfer)?;
 
     if !dry_run {
-        execute_add_plan(ctx, &plan, link, ignore)?;
+        execute_add_plan(ctx, &plan, materializer, transfer, ignore)?;
     }
 
     Ok(ItemAddReport { plan, dry_run })
 }
 
-fn build_add_plan(ctx: &RepoContext, abs_path: &Path) -> Result<ItemAddPlan> {
+fn build_add_plan(
+    ctx: &RepoContext,
+    abs_path: &Path,
+    transfer: &dyn CanonicalTransfer,
+) -> Result<ItemAddPlan> {
     // ── Path validation ──────────────────────────────────────────────────────
     // Must be within the repository root.
     let rel_path = repo_relative_path(&ctx.repo_root, abs_path)?;
@@ -103,7 +106,7 @@ fn build_add_plan(ctx: &RepoContext, abs_path: &Path) -> Result<ItemAddPlan> {
                 reason: "add path is not normalized",
             })?;
     let store_path_global = store_relative_path(&ctx.config.store, &store_path)?;
-    validate_add_canonical_planning(ctx, abs_path, &repo_path, &store_path_global)?;
+    validate_add_canonical_planning(ctx, abs_path, &repo_path, &store_path_global, transfer)?;
 
     Ok(ItemAddPlan {
         path: rel_str,
@@ -118,8 +121,8 @@ fn validate_add_canonical_planning(
     abs_path: &Path,
     repo_path: &RepoRelativePath,
     store_path: &StoreRelativePath,
+    transfer: &dyn CanonicalTransfer,
 ) -> Result<()> {
-    let transfer = DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     let action = CanonicalTransferAction::ReplaceFromRepo {
         source: repo_path.clone(),
         destination: store_path.clone(),
@@ -156,7 +159,8 @@ fn validate_add_canonical_planning(
 fn execute_add_plan(
     ctx: &mut RepoContext,
     plan: &ItemAddPlan,
-    link: &dyn LinkStrategy,
+    materializer: &mut dyn Materializer,
+    transfer: &mut dyn CanonicalTransfer,
     ignore: &dyn IgnoreBackend,
 ) -> Result<()> {
     let repo_path = RepoRelativePath::new(plan.path.clone()).ok_or_else(|| {
@@ -237,18 +241,17 @@ fn execute_add_plan(
         destination: store_path.clone(),
         expected_source: canonical_source_expectation(
             &ctx.repo_root,
-            &ctx.config.store,
             &repo_path,
             &store_path,
+            transfer,
         )?,
         expected_destination: canonical_destination_expectation(
-            &ctx.repo_root,
             &ctx.config.store,
             &repo_path,
             &store_path,
+            transfer,
         )?,
     };
-    let mut transfer = DefaultCanonicalTransfer::new(repo_root.clone(), store_root.clone());
     let prepared_transfer = transfer.prepare(transfer_action.clone(), &mut journal)?;
     let transfer_facts = transfer.inspect(CanonicalTransferInspectionRequest {
         action: transfer_action.clone(),
@@ -266,8 +269,6 @@ fn execute_add_plan(
         location: location.clone(),
         strategy,
     };
-    let mut materializer =
-        DefaultMaterializer::with_link_strategy(repo_root.clone(), store_root.clone(), link);
     let prepared_materialization = materializer.prepare(materialization_action, &mut journal)?;
     let materialization_facts = materializer.inspect(MaterializationInspectionRequest {
         location: location.clone(),
@@ -330,11 +331,10 @@ fn store_relative_path(store_root: &Path, path: &Path) -> Result<StoreRelativePa
 
 fn canonical_source_expectation(
     repo_root: &Path,
-    store_root: &Path,
     repo_path: &RepoRelativePath,
     store_path: &StoreRelativePath,
+    transfer: &dyn CanonicalTransfer,
 ) -> Result<crate::fs::canonical_transfer::ExpectedCanonicalEntry> {
-    let transfer = DefaultCanonicalTransfer::new(repo_root.to_path_buf(), store_root.to_path_buf());
     let action = CanonicalTransferAction::ReplaceFromRepo {
         source: repo_path.clone(),
         destination: store_path.clone(),
@@ -359,12 +359,11 @@ fn canonical_source_expectation(
 }
 
 fn canonical_destination_expectation(
-    repo_root: &Path,
     store_root: &Path,
     repo_path: &RepoRelativePath,
     store_path: &StoreRelativePath,
+    transfer: &dyn CanonicalTransfer,
 ) -> Result<crate::fs::canonical_transfer::ExpectedCanonicalEntry> {
-    let transfer = DefaultCanonicalTransfer::new(repo_root.to_path_buf(), store_root.to_path_buf());
     let action = CanonicalTransferAction::ReplaceFromRepo {
         source: repo_path.clone(),
         destination: store_path.clone(),
@@ -542,7 +541,8 @@ pub fn add_directory(
     ctx: &mut RepoContext,
     abs_dir: &Path,
     dry_run: bool,
-    link: &dyn LinkStrategy,
+    materializer: &mut dyn Materializer,
+    transfer: &mut dyn CanonicalTransfer,
     ignore: &dyn IgnoreBackend,
 ) -> Result<DirectoryAddResult> {
     // ── Validate the directory ───────────────────────────────────────────────
@@ -646,7 +646,7 @@ pub fn add_directory(
     // the established partial-success behavior without allowing one file's
     // interruption to leave another file outside the recovery protocol.
     for (rel_cand_str, abs_cand) in to_shelve {
-        match add_report(ctx, &abs_cand, false, link, ignore) {
+        match add_report(ctx, &abs_cand, false, materializer, transfer, ignore) {
             Ok(_) => results.push((rel_cand_str, DirItemOutcome::Added)),
             Err(error) => results.push((rel_cand_str, DirItemOutcome::Failed(error.to_string()))),
         }
