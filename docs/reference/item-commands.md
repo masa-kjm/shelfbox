@@ -1,7 +1,7 @@
 ## `item` — manage shelved items
 
 - [`item add <PATH>...`](#item-add-path)
-- [`item restore <PATH>...`](#item-restore-path)
+- [`item restore <PATH>... or --all`](#item-restore-path)
 - [`item repair <PATH>...`](#item-repair-path)
 - [`item relink <PATH>...`](#item-relink-path)
 - [`item sync <PATH>... --from <store|repo>`](#item-sync-path---from-storerepo)
@@ -81,6 +81,7 @@ Returns shelved files to their original locations.
 ```sh
 shelfbox item restore .env
 shelfbox item restore secrets/notes/local.md
+shelfbox item restore --all
 ```
 
 **What happens:**
@@ -108,6 +109,21 @@ is never overwritten or deleted by restore; run `item sync --from store` or
 | `--dry-run` | Print what would happen without making changes. |
 | `--keep-ignore` | Do not remove the `.git/info/exclude` entry after restoring. |
 | `--keep-store` | Detach: retain the observed materialization, store item, manifest entry, and exclude, then transition to `detached`. |
+| `--all` | Restore every managed item in the current repository. Cannot be combined with `PATH`. |
+
+**Repository-wide restore:**
+
+Use `--all` to restore every item recorded in the current repository's
+manifest. It never scans other repositories or unrelated store contents.
+
+```sh
+shelfbox item restore --all --dry-run
+shelfbox item restore --all
+```
+
+As with directory restore, shelfbox reports a result for every selected item.
+If an item fails, items restored before it remain restored; resolve the
+reported path and run the command again.
 
 **Directory paths:**
 
