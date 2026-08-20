@@ -6,9 +6,7 @@ use crate::domain::materialization::MaterializationStrategy;
 
 /// Filesystem guarantees that may be unavailable on a platform or filesystem.
 ///
-/// Callers must fail closed when a required capability is unavailable. In
-/// particular, these capabilities must never be emulated with a
-/// delete-then-create sequence.
+/// Callers must fail closed when a required capability is unavailable. In particular, these capabilities must never be emulated with a delete-then-create sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilesystemCapability {
     NoFollowInspection,
@@ -35,8 +33,7 @@ impl std::fmt::Display for FilesystemCapability {
 
 /// Top-level error type for shelfbox-core.
 ///
-/// Variants are kept fine-grained so callers (CLI, GUI, tests) can match
-/// on specific conditions without parsing error strings.
+/// Variants are kept fine-grained so callers (CLI, GUI, tests) can match on specific conditions without parsing error strings.
 #[derive(Debug, Error)]
 pub enum AppError {
     // ── Context / environment ──────────────────────────────────────────────
@@ -75,6 +72,10 @@ pub enum AppError {
     #[error("'{path}' is already managed by shelfbox")]
     AlreadyManaged { path: PathBuf },
 
+    /// An item-operation session was created for a different repository or store context. Reusing its filesystem ports could otherwise direct a mutation at paths unrelated to the manifest being updated.
+    #[error("item operation session does not match the repository context")]
+    ItemOperationSessionContextMismatch,
+
     // ── Store conflicts ────────────────────────────────────────────────────
     /// A file already exists in the store at the computed target path.
     #[error("store conflict: '{store_path}' already exists")]
@@ -98,14 +99,12 @@ pub enum AppError {
     MoveDirectoryUnsupported,
 
     // ── repair validation ──────────────────────────────────────────────────
-    /// A regular (non-symlink) file exists at the repo path; overwriting it
-    /// would cause data loss, so `repair` refuses to proceed.
+    /// A regular (non-symlink) file exists at the repo path; overwriting it would cause data loss, so `repair` refuses to proceed.
     #[error("'{path}' is a regular file; refusing to overwrite (use 'shelfbox restore' first)")]
     PathIsRegularFile { path: PathBuf },
 
     /// A symlink exists at the repo path but points to an unexpected target.
-    /// Overwriting it silently could mask a wrong machine, stale store, or
-    /// copied-repo situation.  Use `repair --force` to override explicitly.
+    /// Overwriting it silently could mask a wrong machine, stale store, or copied-repo situation.  Use `repair --force` to override explicitly.
     #[error(
         "symlink target mismatch at '{path}': points to '{actual_target}', expected '{expected_target}'\n\
          hint: run 'shelfbox item repair --force' if this is intentional"
@@ -116,8 +115,7 @@ pub enum AppError {
         expected_target: PathBuf,
     },
 
-    // ── restore validation ─────────────────────────────────────────────────    /// The restore destination is occupied by a non-symlink entry (regular
-    /// file or directory). Overwriting it would cause data loss.
+    // ── restore validation ─────────────────────────────────────────────────    /// The restore destination is occupied by a non-symlink entry (regular file or directory). Overwriting it would cause data loss.
     #[error(
         "restore destination already exists as a regular file or directory: {path}\n\
          hint: move or rename the existing file first, then re-run restore"
@@ -157,31 +155,26 @@ pub enum AppError {
     RelinkNotDetached { path: PathBuf, actual_state: String },
 
     // ── item sync ─────────────────────────────────────────────────────────────
-    /// Explicit synchronization cannot create a missing materialization,
-    /// because that would silently choose a strategy. Repair it first.
+    /// Explicit synchronization cannot create a missing materialization, because that would silently choose a strategy. Repair it first.
     #[error("'{path}' is missing its materialization; run 'shelfbox item repair {path}' first")]
     SyncMaterializationMissing { path: PathBuf },
 
-    /// Synchronization that would overwrite the selected target requires an
-    /// explicit confirmation flag, even though writes use atomic replacement.
+    /// Synchronization that would overwrite the selected target requires an explicit confirmation flag, even though writes use atomic replacement.
     #[error("this sync direction would overwrite content; rerun with --yes")]
     SyncConfirmationRequired,
 
-    /// The requested direction requires a currently attached isolated regular
-    /// copy, not a managed symlink or another filesystem entry.
+    /// The requested direction requires a currently attached isolated regular copy, not a managed symlink or another filesystem entry.
     #[error("'{path}' must be an attached isolated regular copy for this sync direction")]
     SyncRequiresRegularCopy { path: PathBuf },
 
-    /// Lifecycle commands never choose which diverged Copy wins.  The user
-    /// must select an explicit `item sync` direction first.
+    /// Lifecycle commands never choose which diverged Copy wins.  The user must select an explicit `item sync` direction first.
     #[error(
         "'{path}' diverges from its canonical store copy; run 'shelfbox item sync --from store' or '--from repo --yes' first"
     )]
     ContentDivergedRequiresSync { path: PathBuf },
 
     // ── Store format ─────────────────────────────────────────────────────────
-    /// The manifest file uses an incompatible format version and cannot be
-    /// loaded.  The store was written by a different version of shelfbox.
+    /// The manifest file uses an incompatible format version and cannot be loaded.  The store was written by a different version of shelfbox.
     #[error(
         "manifest at '{path}' has version {found}, expected {expected}\n\
          hint: run 'shelfbox store migrate-manifests' for legacy manifests"
@@ -217,8 +210,7 @@ pub enum AppError {
         source: Box<toml::de::Error>,
     },
 
-    /// A syntactically valid strategy is present in configuration, but its
-    /// workflow has not passed the release safety gate yet.
+    /// A syntactically valid strategy is present in configuration, but its workflow has not passed the release safety gate yet.
     #[error(
         "materialization strategy '{strategy}' is not available in this build yet; \
          copy materialization will be enabled after its safety checks are complete"
@@ -265,10 +257,7 @@ pub enum AppError {
         reason: String,
     },
 
-    /// A strict shelf mutation cannot start because the platform has no
-    /// documented parent-directory durability primitive. This is deliberately
-    /// raised at the operation boundary; low-level adapters retain
-    /// `FilesystemCapabilityUnavailable`.
+    /// A strict shelf mutation cannot start because the platform has no documented parent-directory durability primitive. This is deliberately raised at the operation boundary; low-level adapters retain `FilesystemCapabilityUnavailable`.
     #[error(
         "{operation} requires crash-safe directory durability, which is unavailable on {platform}"
     )]
@@ -280,16 +269,14 @@ pub enum AppError {
         source: Box<AppError>,
     },
 
-    /// Recovery must not silently continue an operation that was started with
-    /// a reduced durability contract after the user has returned to `require`.
+    /// Recovery must not silently continue an operation that was started with a reduced durability contract after the user has returned to `require`.
     #[error(
         "recovery record {record_id} was created with best-effort durability; set mutation_durability to best-effort to resume or inspect recovery"
     )]
     MutationDurabilityRecoveryOptInRequired { record_id: String },
 
     // ── Platform capabilities ──────────────────────────────────────────────
-    /// A required filesystem guarantee is unavailable on this platform or
-    /// filesystem. The operation must stop without changing the destination.
+    /// A required filesystem guarantee is unavailable on this platform or filesystem. The operation must stop without changing the destination.
     #[error("filesystem capability '{capability}' is unavailable on {platform}: {reason}")]
     FilesystemCapabilityUnavailable {
         capability: FilesystemCapability,
@@ -314,8 +301,7 @@ pub enum AppError {
 }
 
 impl AppError {
-    /// Stable machine-facing classification for errors that require a user
-    /// policy decision. Other errors retain their existing detailed variants.
+    /// Stable machine-facing classification for errors that require a user policy decision. Other errors retain their existing detailed variants.
     pub fn classification(&self) -> Option<&'static str> {
         match self {
             Self::MutationDurabilityUnavailable { .. } => Some("mutation_durability_unavailable"),

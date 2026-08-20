@@ -9,6 +9,7 @@ use crate::{
     config::Config,
     domain::mutation_durability::MutationDurability,
     error::{AppError, Result},
+    failpoint::{self, Failpoint},
     fs::{
         lock::{self, StoreLock, StoreLockAccess},
         platform::{self, CapabilitySupport},
@@ -223,13 +224,24 @@ pub fn build_preview_create_or_load(
     cwd: &Path,
     store_override: Option<&Path>,
 ) -> Result<RepoContext> {
-    let config = Config::load(store_override)?;
     let current = current_git_context(cwd)?;
+    build_preview_create_or_load_from_current(&current, store_override)
+}
+
+/// Builds a preview context from already-discovered Git metadata.
+///
+/// This preserves the remote hint discovered for the current top-level command, avoiding a second origin lookup when the context later records identity metadata.
+pub fn build_preview_create_or_load_from_current(
+    current: &CurrentGitContext,
+    store_override: Option<&Path>,
+) -> Result<RepoContext> {
+    validate_current_repo_root(current)?;
+    let config = Config::load(store_override)?;
     let repo_name = repo_name_for_root(&current.repo_root);
 
     if index::index_path(&config.store).is_file() {
         let index = index::load(&config.store)?;
-        if let Some(repo_id) = resolve_existing_repo(&current, &index) {
+        if let Some(repo_id) = resolve_existing_repo(current, &index) {
             if let Some(entry) = index.get(&repo_id) {
                 let repo_store = layout::repo_store_path(&config.store, &entry.repo_store_dir);
                 let manifest = if manifest::manifest_path(&repo_store).is_file() {
@@ -241,13 +253,13 @@ pub fn build_preview_create_or_load(
                 };
 
                 return Ok(RepoContext {
-                    repo_root: current.repo_root,
+                    repo_root: current.repo_root.clone(),
                     repo_id,
                     repo_store,
-                    git_common_dir: current.git_common_dir,
+                    git_common_dir: current.git_common_dir.clone(),
                     manifest,
                     config,
-                    remote_hint: OnceLock::new(),
+                    remote_hint: initialized_remote_hint(current.remote_hint.clone()),
                     _store_lock: None,
                 });
             }
@@ -265,13 +277,13 @@ pub fn build_preview_create_or_load(
     manifest.add_repo_name_hint(&repo_name);
 
     Ok(RepoContext {
-        repo_root: current.repo_root,
+        repo_root: current.repo_root.clone(),
         repo_id,
         repo_store,
-        git_common_dir: current.git_common_dir,
+        git_common_dir: current.git_common_dir.clone(),
         manifest,
         config,
-        remote_hint: OnceLock::new(),
+        remote_hint: initialized_remote_hint(current.remote_hint.clone()),
         _store_lock: None,
     })
 }
@@ -337,6 +349,46 @@ fn build_create_or_load_with_access(
         manifest,
         config,
         remote_hint: OnceLock::new(),
+        _store_lock: store_lock,
+    })
+}
+
+/// Builds a write-capable context from already-discovered Git metadata.
+///
+/// The caller owns the discovery lifetime, so the returned context starts with the same remote hint rather than issuing another metadata query.
+pub fn build_create_or_load_from_current(
+    current: &CurrentGitContext,
+    store_override: Option<&Path>,
+) -> Result<RepoContext> {
+    validate_current_repo_root(current)?;
+    failpoint::after(Failpoint::CurrentRepoRootInitiallyValidated)?;
+
+    let store_context = build_initialized_store_context(store_override, StoreAccess::Write)?;
+    let StoreContext {
+        config,
+        _store_lock: store_lock,
+    } = store_context;
+
+    // The store write lock may have blocked while this checkout was moved, removed, or absorbed by another repository. Revalidate before recovery or identity resolution can act on the caller-supplied root.
+    validate_current_repo_root(current)?;
+
+    recovery::recover_before_mutation(
+        &config.store,
+        &current.repo_root,
+        config.mutation_durability,
+    )?;
+
+    let (repo_id, repo_store, git_common_dir, manifest) =
+        resolve_repo(&current.repo_root, &config, &current.repo_root)?;
+
+    Ok(RepoContext {
+        repo_root: current.repo_root.clone(),
+        repo_id,
+        repo_store,
+        git_common_dir,
+        manifest,
+        config,
+        remote_hint: initialized_remote_hint(current.remote_hint.clone()),
         _store_lock: store_lock,
     })
 }
@@ -445,9 +497,25 @@ fn resolve_repo_read_only(
         git_common_dir: current.git_common_dir.clone(),
         manifest,
         config: config.clone(),
-        remote_hint: OnceLock::new(),
+        remote_hint: initialized_remote_hint(current.remote_hint.clone()),
         _store_lock: None,
     }))
+}
+
+fn initialized_remote_hint(remote_hint: Option<String>) -> OnceLock<Option<String>> {
+    OnceLock::from(remote_hint)
+}
+
+/// Rejects caller-supplied Git metadata unless its repository root is still the current Git toplevel. The remaining Git paths are re-resolved by the write context before they can affect repository/store association.
+fn validate_current_repo_root(current: &CurrentGitContext) -> Result<()> {
+    let repo_root = crate::git::find_repo_root(&current.repo_root)?;
+    if repo_root == current.repo_root {
+        Ok(())
+    } else {
+        Err(AppError::GitRootDetection(
+            "Git repository root changed after discovery".into(),
+        ))
+    }
 }
 
 /// Resolves (or creates) the repo ID and loads (or initialises) the manifest.
@@ -610,9 +678,11 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command as StdCommand;
+    use std::{process::Command as StdCommand, sync::mpsc, time::Duration};
 
     use tempfile::TempDir;
+
+    use crate::failpoint::{self, Failpoint};
 
     fn init_git_repo() -> TempDir {
         let dir = TempDir::new().unwrap();
@@ -745,6 +815,90 @@ mod tests {
         );
 
         assert_eq!(ctx.remote_hint(), Some("github.com/example/first"));
+    }
+
+    #[test]
+    fn write_context_from_current_reuses_the_discovered_remote_hint() {
+        let repo = init_git_repo();
+        run_git(
+            repo.path(),
+            &[
+                "remote",
+                "add",
+                "origin",
+                "git@github.com:example/first.git",
+            ],
+        );
+        let current = current_git_context(repo.path()).unwrap();
+        let store = TempDir::new().unwrap();
+        let ctx = build_create_or_load_from_current(&current, Some(store.path())).unwrap();
+
+        run_git(
+            repo.path(),
+            &[
+                "remote",
+                "set-url",
+                "origin",
+                "git@github.com:example/second.git",
+            ],
+        );
+
+        assert_eq!(ctx.remote_hint(), Some("github.com/example/first"));
+    }
+
+    #[test]
+    fn write_context_from_current_rechecks_root_after_waiting_for_store_lock() {
+        let repo = init_git_repo();
+        let store = TempDir::new().unwrap();
+        let current = current_git_context(repo.path()).unwrap();
+
+        // Hold the write lock so construction validates the Git root before waiting, then cannot proceed to recovery or association until this test releases it.
+        let store_lock = lock::acquire_store_lock(
+            &layout::lock_path(store.path()),
+            StoreLockAccess::Write,
+            true,
+        )
+        .unwrap();
+        let malformed_record = layout::operation_records_dir(store.path()).join("pending.json");
+        std::fs::create_dir_all(malformed_record.parent().unwrap()).unwrap();
+        std::fs::write(&malformed_record, "{}").unwrap();
+
+        let (initial_validation_tx, initial_validation_rx) = mpsc::sync_channel(0);
+        let current_for_worker = current.clone();
+        let store_path = store.path().to_path_buf();
+        let worker = std::thread::spawn(move || {
+            let _hook = failpoint::install_test_hook(move |point| {
+                if *point == Failpoint::CurrentRepoRootInitiallyValidated {
+                    initial_validation_tx
+                        .send(())
+                        .expect("test must be waiting for initial validation");
+                }
+                Ok(())
+            });
+
+            build_create_or_load_from_current(&current_for_worker, Some(&store_path)).map(|_| ())
+        });
+
+        initial_validation_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("context construction must validate the discovered root before locking");
+
+        let moved_git_dir = repo.path().join(".git-moved-during-lock-wait");
+        std::fs::rename(&current.git_dir, &moved_git_dir).unwrap();
+        drop(store_lock);
+
+        let err = worker
+            .join()
+            .expect("context construction thread must not panic")
+            .expect_err("context must reject a root invalidated while it waited for the lock");
+        assert!(
+            matches!(err, AppError::NotAGitRepo),
+            "root revalidation must run before recovery observes the malformed record"
+        );
+        assert!(
+            !index::index_path(store.path()).exists(),
+            "identity resolution must not create an index entry after revalidation fails"
+        );
     }
 
     #[test]

@@ -72,12 +72,28 @@ pub fn build_create_or_load(cwd: &Path, store_override: Option<&Path>) -> Result
     context::build_create_or_load(cwd, store_override)
 }
 
+/// Builds a write-capable context from Git metadata already discovered for this top-level command.
+pub fn build_create_or_load_from_current(
+    current: &CurrentGitContext,
+    store_override: Option<&Path>,
+) -> Result<RepoContext> {
+    context::build_create_or_load_from_current(current, store_override)
+}
+
 pub fn preflight_mutation_durability(store_override: Option<&Path>, operation: &str) -> Result<()> {
     context::preflight_mutation_durability_from_config(store_override, operation)
 }
 
 pub fn build_read_only(cwd: &Path, store_override: Option<&Path>) -> Result<ReadOnlyRepoContext> {
     context::build_read_only(cwd, store_override)
+}
+
+/// Builds a non-mutating preview context from Git metadata already discovered for this top-level command.
+pub fn build_preview_create_or_load_from_current(
+    current: &CurrentGitContext,
+    store_override: Option<&Path>,
+) -> Result<RepoContext> {
+    context::build_preview_create_or_load_from_current(current, store_override)
 }
 
 pub fn build_explicit_reclaim(

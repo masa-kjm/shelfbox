@@ -3,10 +3,10 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Subcommand, ValueEnum};
-use shelfbox_core::api::item;
+use shelfbox_core::api::{item, repo};
 
 use crate::commands::format::OutputFormat;
-use crate::commands::util::{resolve_path, warn_reclaim_candidates_if_unassociated};
+use crate::commands::util::{resolve_path, warn_reclaim_candidates_for_current_if_unassociated};
 
 // ── item subcommands ────────────────────────────────────────────────────────────────────────────
 
@@ -370,13 +370,15 @@ fn cmd_add(
     paths: &[PathBuf],
     dry_run: bool,
 ) -> Result<()> {
-    warn_reclaim_candidates_if_unassociated(cwd, store_override);
+    let current =
+        repo::current_git_context(cwd).context("failed to inspect current git repository")?;
+    warn_reclaim_candidates_for_current_if_unassociated(&current, store_override);
 
     let mut ctx = if dry_run {
-        item::build_preview_create_or_load(cwd, store_override)
+        repo::build_preview_create_or_load_from_current(&current, store_override)
             .context("failed to initialise preview repo context")?
     } else {
-        item::build_create_or_load(cwd, store_override)
+        repo::build_create_or_load_from_current(&current, store_override)
             .context("failed to initialise repo context")?
     };
     let mut session = item::ItemOperationSession::new(&ctx);
