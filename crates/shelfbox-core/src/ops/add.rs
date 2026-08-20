@@ -41,10 +41,8 @@ fn update_identity_hints(ctx: &mut RepoContext) {
         ctx.manifest.add_repo_name_hint(name);
     }
 
-    if let Ok(Some(remote_url)) = git::remote_url(&ctx.repo_root) {
-        if let Some(remote_hint) = git::normalize_remote_hint(&remote_url) {
-            ctx.manifest.add_remote_hint(&remote_hint);
-        }
+    if let Some(remote_hint) = ctx.remote_hint().map(str::to_owned) {
+        ctx.manifest.add_remote_hint(&remote_hint);
     }
 }
 

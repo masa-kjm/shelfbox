@@ -1,4 +1,4 @@
-//! Test-only interruption hooks for durable mutation boundaries.
+//! Test-only interruption hooks for context-construction and durable mutation boundaries.
 //!
 //! Production builds always use a no-op hook.  Tests install a hook in the
 //! current thread and may return an error immediately after a durable
@@ -10,9 +10,11 @@ use crate::{
     error::Result,
 };
 
-/// Named durable and non-durable mutation boundaries used by crash tests.
+/// Named context-construction and mutation boundaries used by safety and crash tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Failpoint {
+    /// Runs after `build_create_or_load_from_current` verifies that the caller-supplied Git root is still current, before it waits for the store write lock.
+    CurrentRepoRootInitiallyValidated,
     OperationRecordCreated,
     OperationPhaseUpdated(OperationPhase),
     ArtifactPathRecorded,
@@ -100,6 +102,7 @@ mod tests {
         });
 
         let points = [
+            Failpoint::CurrentRepoRootInitiallyValidated,
             Failpoint::OperationRecordCreated,
             Failpoint::OperationPhaseUpdated(OperationPhase::ManifestSaved),
             Failpoint::ArtifactPathRecorded,

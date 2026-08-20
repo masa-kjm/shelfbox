@@ -33,20 +33,27 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     out
 }
 
-/// Prints a best-effort reclaim hint when this clone has no local index match
-/// but existing manifests contain positive-scoring candidates.
+/// Prints a best-effort reclaim hint when this clone has no local index match but existing manifests contain positive-scoring candidates.
 pub fn warn_reclaim_candidates_if_unassociated(cwd: &Path, store_override: Option<&Path>) {
-    let Ok(config) = repo::load_config(store_override) else {
+    let Ok(current) = repo::current_git_context(cwd) else {
         return;
     };
-    let Ok(current) = repo::current_git_context(cwd) else {
+    warn_reclaim_candidates_for_current_if_unassociated(&current, store_override);
+}
+
+/// Prints a best-effort reclaim hint using Git metadata already discovered for the current top-level command.
+pub fn warn_reclaim_candidates_for_current_if_unassociated(
+    current: &repo::CurrentGitContext,
+    store_override: Option<&Path>,
+) {
+    let Ok(config) = repo::load_config(store_override) else {
         return;
     };
     let Ok(idx) = repo::load_index(&config.store) else {
         return;
     };
 
-    if repo::resolve_existing_repo(&current, &idx).is_some() {
+    if repo::resolve_existing_repo(current, &idx).is_some() {
         return;
     }
 
