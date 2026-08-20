@@ -55,11 +55,11 @@ sha256_file() {
 }
 
 now_ns() {
-    python3 -c 'import time; print(time.monotonic_ns())'
+    "$python_command" -c 'import time; print(time.monotonic_ns())'
 }
 
 elapsed_ms() {
-    python3 - "$1" "$2" <<'PY'
+    "$python_command" - "$1" "$2" <<'PY'
 import sys
 
 start, end = map(int, sys.argv[1:])
@@ -80,6 +80,7 @@ file_size_bytes=4096
 strategy=symlink
 durability=require
 gate=none
+python_command=
 
 while (($# > 0)); do
     case $1 in
@@ -141,10 +142,18 @@ is_positive_integer "$file_size_bytes" || fail "--file-size-bytes must be a posi
 [[ $gate == none || $gate == p1 ]] || fail "--gate must be none or p1"
 
 require_command git
-require_command python3
 require_command awk
 require_command sort
 require_command dd
+
+for candidate_python in python3 python; do
+    if command -v "$candidate_python" >/dev/null 2>&1 \
+        && "$candidate_python" -c 'import sys; raise SystemExit(sys.version_info < (3, 0))'; then
+        python_command=$candidate_python
+        break
+    fi
+done
+[[ -n $python_command ]] || fail "required command is unavailable: Python 3 (python3 or python)"
 
 baseline=$(absolute_existing_file "$baseline")
 candidate=$(absolute_existing_file "$candidate")

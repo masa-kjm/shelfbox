@@ -16,7 +16,29 @@ Baseline and candidate order alternate for every pair.
 
 ## Bash Runner
 
-`run.sh` supports Linux, macOS, WSL, and native Windows Git Bash with Bash, Git, Python 3, `awk`, `sort`, and either `sha256sum` or `shasum`. Pass two already-built release binaries and an output directory that does not yet exist:
+`run.sh` supports Linux, macOS, WSL, and native Windows Git Bash with Bash,
+Git, Python 3 (`python3` or `python`), `awk`, `sort`, and either `sha256sum`
+or `shasum`. Pass two already-built release binaries and an output directory
+that does not yet exist:
+
+Prepare two release builds in separate directories, then run:
+
+```sh
+BASELINE_REF=<baseline_commit_hash>
+CANDIDATE_REF=<candidate_commit_hash>
+BASELINE_DIR=/c/src/shelfbox-p1-baseline
+CANDIDATE_DIR=/c/src/shelfbox-p1-candidate
+
+git worktree add --detach "$BASELINE_DIR" "$BASELINE_REF"
+git worktree add --detach "$CANDIDATE_DIR" "$CANDIDATE_REF"
+
+cd "$BASELINE_DIR"
+cargo build --release --locked -p shelfbox
+cd "$CANDIDATE_DIR"
+cargo build --release --locked -p shelfbox
+```
+
+Execute the benchmark harness:
 
 ```sh
 bash scripts/benchmarks/add-restore/run.sh \
