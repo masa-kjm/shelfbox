@@ -40,7 +40,7 @@ use crate::{
         canonical_transfer::DefaultCanonicalTransfer, materializer::DefaultMaterializer,
         DefaultLinkStrategy,
     },
-    git::exclude::{GitInfoExclude, IgnoreBackend},
+    git::exclude::{GitInfoExclude, GitInfoExcludeSession, IgnoreBackend},
     ops::{
         add, info as info_ops, list as list_ops, materialize as materialize_ops,
         move_item as move_item_ops, path as path_ops, relink as relink_ops, repair as repair_ops,
@@ -48,11 +48,26 @@ use crate::{
     },
 };
 
-fn item_operation_ports(ctx: &RepoContext) -> (DefaultMaterializer, DefaultCanonicalTransfer) {
-    (
-        DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone()),
-        DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone()),
-    )
+/// Reusable ports for all add and restore operations in one top-level command.
+///
+/// The session caches only immutable construction data and the resolved worktree-aware exclude path. Every ignore operation rereads the exclude file, and every add operation continues to check Git tracked state at its own commit boundary.
+pub struct ItemOperationSession {
+    materializer: DefaultMaterializer,
+    transfer: DefaultCanonicalTransfer,
+    ignore: GitInfoExcludeSession,
+}
+
+impl ItemOperationSession {
+    pub fn new(ctx: &RepoContext) -> Self {
+        Self {
+            materializer: DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone()),
+            transfer: DefaultCanonicalTransfer::new(
+                ctx.repo_root.clone(),
+                ctx.config.store.clone(),
+            ),
+            ignore: GitInfoExclude::session(&ctx.repo_root),
+        }
+    }
 }
 
 pub fn build_create_or_load(cwd: &Path, store_override: Option<&Path>) -> Result<RepoContext> {
@@ -78,15 +93,24 @@ pub fn build_read_only(cwd: &Path, store_override: Option<&Path>) -> Result<Read
 }
 
 pub fn add_file(ctx: &mut RepoContext, abs_path: &Path, dry_run: bool) -> Result<ItemAddReport> {
-    let (mut materializer, mut transfer) = item_operation_ports(ctx);
-    let ignore = GitInfoExclude;
+    let mut session = ItemOperationSession::new(ctx);
+    add_file_with_session(ctx, abs_path, dry_run, &mut session)
+}
+
+/// Adds one file using ports shared by the current top-level command.
+pub fn add_file_with_session(
+    ctx: &mut RepoContext,
+    abs_path: &Path,
+    dry_run: bool,
+    session: &mut ItemOperationSession,
+) -> Result<ItemAddReport> {
     add::add_report(
         ctx,
         abs_path,
         dry_run,
-        &mut materializer,
-        &mut transfer,
-        &ignore,
+        &mut session.materializer,
+        &mut session.transfer,
+        &session.ignore,
     )
 }
 
@@ -95,15 +119,24 @@ pub fn add_directory(
     abs_path: &Path,
     dry_run: bool,
 ) -> Result<DirectoryAddResult> {
-    let (mut materializer, mut transfer) = item_operation_ports(ctx);
-    let ignore = GitInfoExclude;
+    let mut session = ItemOperationSession::new(ctx);
+    add_directory_with_session(ctx, abs_path, dry_run, &mut session)
+}
+
+/// Adds a directory using ports shared by the current top-level command.
+pub fn add_directory_with_session(
+    ctx: &mut RepoContext,
+    abs_path: &Path,
+    dry_run: bool,
+    session: &mut ItemOperationSession,
+) -> Result<DirectoryAddResult> {
     add::add_directory(
         ctx,
         abs_path,
         dry_run,
-        &mut materializer,
-        &mut transfer,
-        &ignore,
+        &mut session.materializer,
+        &mut session.transfer,
+        &session.ignore,
     )
 }
 
@@ -114,12 +147,30 @@ pub fn restore_file(
     keep_ignore: bool,
     keep_store: bool,
 ) -> Result<ItemRestoreReport> {
-    let (mut materializer, mut transfer) = item_operation_ports(ctx);
+    let mut session = ItemOperationSession::new(ctx);
+    restore_file_with_session(
+        ctx,
+        abs_path,
+        dry_run,
+        keep_ignore,
+        keep_store,
+        &mut session,
+    )
+}
+
+/// Restores one file using ports shared by the current top-level command.
+pub fn restore_file_with_session(
+    ctx: &mut RepoContext,
+    abs_path: &Path,
+    dry_run: bool,
+    keep_ignore: bool,
+    keep_store: bool,
+    session: &mut ItemOperationSession,
+) -> Result<ItemRestoreReport> {
     let mut ports = restore::RestorePorts {
-        materializer: &mut materializer,
-        transfer: &mut transfer,
+        materializer: &mut session.materializer,
+        transfer: &mut session.transfer,
     };
-    let ignore = GitInfoExclude;
     restore::restore(
         ctx,
         abs_path,
@@ -127,7 +178,7 @@ pub fn restore_file(
         keep_ignore,
         keep_store,
         &mut ports,
-        &ignore,
+        &session.ignore,
     )
 }
 
@@ -138,12 +189,23 @@ pub fn restore_namespace(
     keep_ignore: bool,
     keep_store: bool,
 ) -> Result<NamespaceRestoreResult> {
-    let (mut materializer, mut transfer) = item_operation_ports(ctx);
+    let mut session = ItemOperationSession::new(ctx);
+    restore_namespace_with_session(ctx, ns_path, dry_run, keep_ignore, keep_store, &mut session)
+}
+
+/// Restores a namespace using ports shared by the current top-level command.
+pub fn restore_namespace_with_session(
+    ctx: &mut RepoContext,
+    ns_path: &str,
+    dry_run: bool,
+    keep_ignore: bool,
+    keep_store: bool,
+    session: &mut ItemOperationSession,
+) -> Result<NamespaceRestoreResult> {
     let mut ports = restore::RestorePorts {
-        materializer: &mut materializer,
-        transfer: &mut transfer,
+        materializer: &mut session.materializer,
+        transfer: &mut session.transfer,
     };
-    let ignore = GitInfoExclude;
     restore::restore_namespace(
         ctx,
         ns_path,
@@ -151,7 +213,7 @@ pub fn restore_namespace(
         keep_ignore,
         keep_store,
         &mut ports,
-        &ignore,
+        &session.ignore,
     )
 }
 

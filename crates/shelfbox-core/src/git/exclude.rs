@@ -54,6 +54,13 @@ const BLOCK_END: &str = "# END shelfbox";
 /// this tool.
 pub struct GitInfoExclude;
 
+/// Per-command ignore backend that resolves the worktree-aware exclude path once while rereading its contents for every operation boundary.
+///
+/// The cached path removes repeated Git plumbing discovery only. It never caches managed entries, so an external edit remains visible to the next validation and fails closed when malformed.
+pub(crate) struct GitInfoExcludeSession {
+    path: PathBuf,
+}
+
 impl GitInfoExclude {
     /// Returns the path to `.git/info/exclude` for `repo_root`.
     ///
@@ -69,11 +76,21 @@ impl GitInfoExclude {
         }
     }
 
+    /// Resolves the exclude path once for a top-level item command.
+    pub(crate) fn session(repo_root: &Path) -> GitInfoExcludeSession {
+        GitInfoExcludeSession {
+            path: Self::exclude_path(repo_root),
+        }
+    }
+
     /// Reads the current contents of `.git/info/exclude`, silently returning
     /// an empty string if the file does not exist yet.
     fn read(repo_root: &Path) -> Result<String> {
-        let path = Self::exclude_path(repo_root);
-        match std::fs::read_to_string(&path) {
+        Self::read_path(&Self::exclude_path(repo_root))
+    }
+
+    fn read_path(path: &Path) -> Result<String> {
+        match std::fs::read_to_string(path) {
             Ok(s) => Ok(s),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
             Err(e) => Err(AppError::io(path, e)),
@@ -82,14 +99,16 @@ impl GitInfoExclude {
 
     /// Atomically writes `contents` to `.git/info/exclude`.
     ///
-    /// Creates the parent directory if it doesn't exist (bare repos or
-    /// newly initialised worktrees may not have it yet).
+    /// Creates the parent directory if it doesn't exist (bare repos or newly initialised worktrees may not have it yet).
     fn write(repo_root: &Path, contents: &str) -> Result<()> {
-        let path = Self::exclude_path(repo_root);
+        Self::write_path(&Self::exclude_path(repo_root), contents)
+    }
+
+    fn write_path(path: &Path, contents: &str) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
         }
-        std::fs::write(&path, contents).map_err(|e| AppError::io(path, e))
+        std::fs::write(path, contents).map_err(|e| AppError::io(path, e))
     }
 
     /// Parses `contents` into three parts:
@@ -228,6 +247,16 @@ impl GitInfoExclude {
     }
 }
 
+impl GitInfoExcludeSession {
+    fn read(&self) -> Result<String> {
+        GitInfoExclude::read_path(&self.path)
+    }
+
+    fn write(&self, contents: &str) -> Result<()> {
+        GitInfoExclude::write_path(&self.path, contents)
+    }
+}
+
 impl IgnoreBackend for GitInfoExclude {
     fn add_entries(&self, repo_root: &Path, entries: &[&str]) -> Result<()> {
         let contents = Self::read(repo_root)?;
@@ -262,11 +291,45 @@ impl IgnoreBackend for GitInfoExclude {
     }
 }
 
+impl IgnoreBackend for GitInfoExcludeSession {
+    fn add_entries(&self, _repo_root: &Path, entries: &[&str]) -> Result<()> {
+        let contents = self.read()?;
+        let (before, mut managed, after) = GitInfoExclude::parse_checked(&contents)?;
+
+        for entry in entries {
+            let entry = entry.to_string();
+            if !managed.contains(&entry) {
+                managed.push(entry);
+            }
+        }
+        managed.sort();
+
+        self.write(&GitInfoExclude::render(&before, &managed, &after))
+    }
+
+    fn remove_entries(&self, _repo_root: &Path, entries: &[&str]) -> Result<()> {
+        let contents = self.read()?;
+        let (before, mut managed, after) = GitInfoExclude::parse_checked(&contents)?;
+
+        managed.retain(|entry| !entries.contains(&entry.as_str()));
+
+        self.write(&GitInfoExclude::render(&before, &managed, &after))
+    }
+
+    fn has_entry(&self, _repo_root: &Path, entry: &str) -> Result<bool> {
+        let contents = self.read()?;
+        let (_, managed, _) = GitInfoExclude::parse_checked(&contents)?;
+        Ok(managed.iter().any(|managed_entry| managed_entry == entry))
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
+
     use tempfile::TempDir;
 
     /// Creates a fake `.git/info/` directory so `write` has somewhere to go.
@@ -276,6 +339,20 @@ mod tests {
 
     fn backend() -> GitInfoExclude {
         GitInfoExclude
+    }
+
+    fn run_git(cwd: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to spawn git {}: {error}", args[0]));
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args[0],
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     // ── parse / render round-trip ────────────────────────────────────────────
@@ -447,6 +524,55 @@ mod tests {
 
         backend().add_entries(dir.path(), &["/notes.md"]).unwrap();
         assert!(backend().has_entry(dir.path(), "/notes.md").unwrap());
+    }
+
+    #[test]
+    fn session_rereads_exclude_contents_at_each_operation_boundary() {
+        let dir = TempDir::new().unwrap();
+        setup_git_dir(dir.path());
+        let session = GitInfoExclude::session(dir.path());
+
+        session.add_entries(dir.path(), &["/first.md"]).unwrap();
+
+        let path = GitInfoExclude::exclude_path(dir.path());
+        std::fs::write(&path, "# BEGIN shelfbox\n/second.md\n# END shelfbox\n").unwrap();
+
+        assert!(!session.has_entry(dir.path(), "/first.md").unwrap());
+        assert!(session.has_entry(dir.path(), "/second.md").unwrap());
+    }
+
+    #[test]
+    fn session_resolves_and_uses_linked_worktree_exclude_path() {
+        let main = TempDir::new().unwrap();
+        run_git(main.path(), &["init", "-b", "main"]);
+        run_git(main.path(), &["config", "user.email", "test@example.com"]);
+        run_git(main.path(), &["config", "user.name", "Test User"]);
+        run_git(main.path(), &["commit", "--allow-empty", "-m", "initial"]);
+
+        let worktree_parent = TempDir::new().unwrap();
+        let worktree = worktree_parent.path().join("linked-worktree");
+        run_git(
+            main.path(),
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "linked",
+                worktree.to_str().unwrap(),
+            ],
+        );
+
+        let session = GitInfoExclude::session(&worktree);
+        session
+            .add_entries(&worktree, &["/worktree-only.md"])
+            .unwrap();
+
+        let resolved_path = exclude_file_path(&worktree).unwrap();
+        assert!(resolved_path.is_file());
+        assert!(std::fs::read_to_string(resolved_path)
+            .unwrap()
+            .contains("/worktree-only.md"));
+        assert!(session.has_entry(&worktree, "/worktree-only.md").unwrap());
     }
 
     // ── regression ───────────────────────────────────────────────────────────

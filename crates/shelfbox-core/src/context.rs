@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use ulid::Ulid;
 
@@ -49,6 +52,11 @@ pub struct RepoContext {
 
     /// Resolved configuration (store path, etc.).
     pub config: Config,
+
+    /// Normalized origin hint discovered lazily once for this context.
+    ///
+    /// This is metadata only. Operations continue to read Git tracked state at each destructive commit boundary.
+    remote_hint: OnceLock<Option<String>>,
 
     /// Advisory file lock on `<store>/.lock`, held for this context's lifetime.
     /// `None` in unit-test contexts and read-only contexts that must not
@@ -161,6 +169,18 @@ impl RepoContext {
             .ok()
             .map(|p| p.to_string_lossy().into_owned())
     }
+
+    /// Returns the normalized origin hint, discovering it at most once for this context. Git failures remain best-effort metadata failures.
+    pub(crate) fn remote_hint(&self) -> Option<&str> {
+        self.remote_hint
+            .get_or_init(|| {
+                crate::git::remote_url(&self.repo_root)
+                    .ok()
+                    .flatten()
+                    .and_then(|url| crate::git::normalize_remote_hint(&url))
+            })
+            .as_deref()
+    }
 }
 
 // ── Construction ──────────────────────────────────────────────────────────────
@@ -227,6 +247,7 @@ pub fn build_preview_create_or_load(
                     git_common_dir: current.git_common_dir,
                     manifest,
                     config,
+                    remote_hint: OnceLock::new(),
                     _store_lock: None,
                 });
             }
@@ -250,6 +271,7 @@ pub fn build_preview_create_or_load(
         git_common_dir: current.git_common_dir,
         manifest,
         config,
+        remote_hint: OnceLock::new(),
         _store_lock: None,
     })
 }
@@ -314,6 +336,7 @@ fn build_create_or_load_with_access(
         git_common_dir,
         manifest,
         config,
+        remote_hint: OnceLock::new(),
         _store_lock: store_lock,
     })
 }
@@ -422,6 +445,7 @@ fn resolve_repo_read_only(
         git_common_dir: current.git_common_dir.clone(),
         manifest,
         config: config.clone(),
+        remote_hint: OnceLock::new(),
         _store_lock: None,
     }))
 }
@@ -649,6 +673,7 @@ mod tests {
             git_common_dir: PathBuf::from("/repo/.git"),
             manifest: Manifest::new("TESTID", "2026-04-29T00:00:00Z"),
             config: Config::with_store("/store"),
+            remote_hint: OnceLock::new(),
             _store_lock: None,
         };
 
@@ -691,6 +716,35 @@ mod tests {
             resolve_existing_repo(&current, &index).as_deref(),
             Some("repo-1")
         );
+    }
+
+    #[test]
+    fn repo_context_caches_remote_hint_after_first_discovery() {
+        let repo = init_git_repo();
+        run_git(
+            repo.path(),
+            &[
+                "remote",
+                "add",
+                "origin",
+                "git@github.com:example/first.git",
+            ],
+        );
+        let store = TempDir::new().unwrap();
+        let ctx = build_preview_create_or_load(repo.path(), Some(store.path())).unwrap();
+
+        assert_eq!(ctx.remote_hint(), Some("github.com/example/first"));
+        run_git(
+            repo.path(),
+            &[
+                "remote",
+                "set-url",
+                "origin",
+                "git@github.com:example/second.git",
+            ],
+        );
+
+        assert_eq!(ctx.remote_hint(), Some("github.com/example/first"));
     }
 
     #[test]
