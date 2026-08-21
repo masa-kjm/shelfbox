@@ -28,12 +28,7 @@ For example:
 SHELFBOX_STORE=/work/store shelfbox item list
 ```
 
-Changing the active store does not migrate existing repository ownership or
-materializations to a new store. It only changes which store the CLI reads and
-writes. If a repository was previously managed under another store, restore that
-store or rebuild the local index from `repos/`, then run `repo reclaim` and
-`repo repair` to re-associate the current clone. Shelfbox does not support a
-live multi-store workflow for the same repository.
+Changing the active store does not migrate existing repository ownership or materializations to a new store. It only changes which store the CLI reads and writes. If a repository was previously managed under another store, restore that store or rebuild the local index from `repos/`, then run `repo reclaim` and `repo repair` to re-associate the current clone. Shelfbox does not support a live multi-store workflow for the same repository.
 
 ---
 
@@ -77,8 +72,7 @@ shelfbox config path
 
 ### `config get <KEY>`
 
-Prints the resolved value of a configuration key. Always returns a value
-(falls back to the built-in default if not configured).
+Prints the resolved value of a configuration key. Always returns a value (falls back to the built-in default if not configured).
 
 ```sh
 shelfbox config get store
@@ -101,9 +95,7 @@ Supported keys: `store`, `default_format`, `materialization`, `mutation_durabili
 
 ### `config set <KEY> <VALUE>`
 
-Updates a configuration key in `config.toml` without touching other content
-(comments and unknown keys are preserved). Creates the file if it does not
-exist.
+Updates a configuration key in `config.toml` without touching other content (comments and unknown keys are preserved). Creates the file if it does not exist.
 
 ```sh
 shelfbox config set store /mnt/external/shelfbox-store
@@ -121,28 +113,18 @@ Supported keys:
 | `materialization` | `symlink` (default), `copy` |
 | `mutation_durability` | `require` (default), `best-effort` |
 
-`materialization` selects the default for future materializations. It does not
-convert an existing symlink or regular copy. A Copy item is a regular file in
-the repository; its canonical content remains in the store and changed content
-requires an explicit `item sync` direction.
+`materialization` selects the default for future materializations. It does not convert an existing symlink or regular copy. A Copy item is a regular file in the repository; its canonical content remains in the store and changed content requires an explicit `item sync` direction.
 
 `mutation_durability` is user-local configuration, not repository metadata.
-`require` retains the full directory-durability protocol and fails closed
-before a shelf mutation starts when the capability is unavailable (including on
-Windows). `best-effort` is an explicit reduced-guarantee opt-in: it attempts
-the same syncs and continues only for the typed unavailable
-directory-durability capability. I/O, permission, identity, locking, and
-validation errors still fail. Each successful best-effort mutation warns on
-stderr; complete recovery after power loss or forced termination is not
-guaranteed. `config set` itself is administrative and remains available so a
-Windows user can make this opt-in.
+`require` retains the full directory-durability protocol and fails closed before a shelf mutation starts when the capability is unavailable (including on Windows).
+`best-effort` is an explicit reduced-guarantee opt-in: it attempts the same syncs and continues only for the typed unavailable directory-durability capability. I/O, permission, identity, locking, and validation errors still fail. Complete recovery after power loss or forced termination is not guaranteed. `config set` itself is administrative and remains available so a Windows user can make this opt-in.
+
 
 ---
 
 ### `config explain <KEY>`
 
-Shows the type, default, description, and resolution precedence for a
-configuration key.
+Shows the type, default, description, and resolution precedence for a configuration key.
 
 ```sh
 shelfbox config explain store
