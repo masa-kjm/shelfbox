@@ -55,6 +55,20 @@ pub fn load(repo_store: &Path) -> Result<Manifest> {
 }
 
 pub fn save(repo_store: &Path, manifest: &Manifest) -> Result<()> {
+    #[cfg(test)]
+    {
+        crate::perf_profile::measure(crate::perf_profile::Phase::Manifest, || {
+            save_inner(repo_store, manifest)
+        })
+    }
+
+    #[cfg(not(test))]
+    {
+        save_inner(repo_store, manifest)
+    }
+}
+
+fn save_inner(repo_store: &Path, manifest: &Manifest) -> Result<()> {
     let path = manifest_path(repo_store);
     path_escape_policy::validate_manifest_paths(manifest)?;
     let json =

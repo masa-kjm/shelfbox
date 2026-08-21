@@ -14,6 +14,19 @@ use crate::{
     ops::path::repo_relative_string,
 };
 
+macro_rules! measure_restore_planning_materializer {
+    ($operation:expr) => {{
+        #[cfg(test)]
+        {
+            crate::perf_profile::measure(crate::perf_profile::Phase::Materializer, || $operation)
+        }
+        #[cfg(not(test))]
+        {
+            $operation
+        }
+    }};
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ItemRestoreAction {
     RestoreFile,
@@ -94,10 +107,12 @@ impl ItemRestorePlan {
                     path: store_path.clone(),
                     reason: "restore store path is not normalized",
                 })?;
-        let facts = materializer.inspect(MaterializationInspectionRequest {
-            location: MaterializationLocation::new(repo_path, store_relative),
-            purpose: InspectionPurpose::Planning,
-        })?;
+        let facts = measure_restore_planning_materializer!(materializer.inspect(
+            MaterializationInspectionRequest {
+                location: MaterializationLocation::new(repo_path, store_relative),
+                purpose: InspectionPurpose::Planning,
+            }
+        ))?;
         if !facts.store_regular {
             return Err(AppError::StoreMissing {
                 path: abs_path.to_path_buf(),

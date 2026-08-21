@@ -3,6 +3,20 @@ use std::{path::Path, process::Command};
 use crate::error::{AppError, Result};
 
 pub(crate) fn run_git(args: &[&str], repo_root: &Path) -> Result<String> {
+    #[cfg(test)]
+    {
+        crate::perf_profile::measure(crate::perf_profile::Phase::GitValidation, || {
+            run_git_inner(args, repo_root)
+        })
+    }
+
+    #[cfg(not(test))]
+    {
+        run_git_inner(args, repo_root)
+    }
+}
+
+fn run_git_inner(args: &[&str], repo_root: &Path) -> Result<String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(repo_root)

@@ -293,6 +293,50 @@ impl IgnoreBackend for GitInfoExclude {
 
 impl IgnoreBackend for GitInfoExcludeSession {
     fn add_entries(&self, _repo_root: &Path, entries: &[&str]) -> Result<()> {
+        #[cfg(test)]
+        {
+            crate::perf_profile::measure(crate::perf_profile::Phase::Exclude, || {
+                self.add_entries_inner(entries)
+            })
+        }
+
+        #[cfg(not(test))]
+        {
+            self.add_entries_inner(entries)
+        }
+    }
+
+    fn remove_entries(&self, _repo_root: &Path, entries: &[&str]) -> Result<()> {
+        #[cfg(test)]
+        {
+            crate::perf_profile::measure(crate::perf_profile::Phase::Exclude, || {
+                self.remove_entries_inner(entries)
+            })
+        }
+
+        #[cfg(not(test))]
+        {
+            self.remove_entries_inner(entries)
+        }
+    }
+
+    fn has_entry(&self, _repo_root: &Path, entry: &str) -> Result<bool> {
+        #[cfg(test)]
+        {
+            crate::perf_profile::measure(crate::perf_profile::Phase::Exclude, || {
+                self.has_entry_inner(entry)
+            })
+        }
+
+        #[cfg(not(test))]
+        {
+            self.has_entry_inner(entry)
+        }
+    }
+}
+
+impl GitInfoExcludeSession {
+    fn add_entries_inner(&self, entries: &[&str]) -> Result<()> {
         let contents = self.read()?;
         let (before, mut managed, after) = GitInfoExclude::parse_checked(&contents)?;
 
@@ -307,7 +351,7 @@ impl IgnoreBackend for GitInfoExcludeSession {
         self.write(&GitInfoExclude::render(&before, &managed, &after))
     }
 
-    fn remove_entries(&self, _repo_root: &Path, entries: &[&str]) -> Result<()> {
+    fn remove_entries_inner(&self, entries: &[&str]) -> Result<()> {
         let contents = self.read()?;
         let (before, mut managed, after) = GitInfoExclude::parse_checked(&contents)?;
 
@@ -316,7 +360,7 @@ impl IgnoreBackend for GitInfoExcludeSession {
         self.write(&GitInfoExclude::render(&before, &managed, &after))
     }
 
-    fn has_entry(&self, _repo_root: &Path, entry: &str) -> Result<bool> {
+    fn has_entry_inner(&self, entry: &str) -> Result<bool> {
         let contents = self.read()?;
         let (_, managed, _) = GitInfoExclude::parse_checked(&contents)?;
         Ok(managed.iter().any(|managed_entry| managed_entry == entry))

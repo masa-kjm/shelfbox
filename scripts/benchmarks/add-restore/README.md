@@ -66,6 +66,46 @@ For a native Windows run from Git Bash, pass Windows-built `.exe` binaries using
 
 The gate does not establish host stability. If a baseline has large outliers, retain the raw data and repeat the run on a stable native runner before using P95 as a pass/fail result.
 
+## P2 Restore Profile
+
+`profile-restore.sh` profiles the merged P1 baseline's 1 × 64 MiB symlink restore path before any P2 implementation. It runs an ignored core test; fixture creation and `add` occur outside the profiled interval. The profiled interval starts immediately before `restore_file`, so it includes P1's restore-session construction and the restore workflow, but not CLI process startup or context construction.
+
+```sh
+bash scripts/benchmarks/add-restore/profile-restore.sh \
+  --output-dir tmp/20260820-p2-restore-wsl \
+  --samples 10 \
+  --durability require
+```
+
+The runner refuses to reuse an output directory and writes `raw.csv`, `summary.csv`, `metadata.txt`, and `logs/test.log`. `metadata.txt` records the source commit and whether its worktree was dirty, because the test-only profiler is compiled from the current checkout. Phase rows use exclusive elapsed time: nested profiled work is attributed to its own phase, and `summary.csv` reports the remaining `unattributed` time. `recovery_fingerprint.bytes` is the actual stream-read byte count, not a file-size estimate.
+
+For native Windows Git Bash, use a new directory below that checkout's `tmp/` and pass `--durability best-effort`. File-symlink support still requires Developer Mode or an elevated shell.
+
+## P3 Multi-Item Profile
+
+`profile-multi-item.sh` profiles the merged P1 baseline's 100 × 4 KiB symlink add and restore workflow before any P3 implementation.
+It determines whether manifest, managed exclude, and recovery-record persistence account for enough of the multi-item operation to justify a command-level recovery coordinator.
+The ignored core test shares the P1 operation ports and exclude session across 100 explicit file paths.
+Fixture creation and context construction occur outside each profiled interval.
+
+```sh
+bash scripts/benchmarks/add-restore/profile-multi-item.sh \
+  --output-dir tmp/20260821-p3-profile-windows \
+  --samples 10 \
+  --durability require
+```
+
+The runner refuses to reuse an output directory and writes `raw.csv`, `summary.csv`, `metadata.txt`, and `logs/test.log`.
+`metadata.txt` records the source commit and whether its worktree was dirty, because the test-only profiler is compiled from the current checkout.
+Phase rows use exclusive elapsed time: nested profiled work is attributed to its own phase, and `summary.csv` reports the remaining `unattributed` time.
+The profile records recovery-fingerprint calls and actual streamed bytes alongside materialization, transfer, record synchronization, manifest, exclude, and Git-validation time.
+
+For native Windows Git Bash, use a new directory below that checkout's `tmp/` and pass `--durability best-effort`.
+File-symlink support still requires Developer Mode or an elevated shell.
+
+The P3 gate requires batchable manifest, exclude, and recovery-record persistence to account for at least 25% of the relevant P50 before designing a command-level coordinator.
+Do not treat a large aggregate record-sync measurement alone as permission to defer writes: every item must retain a durable pre-mutation record and its recovery boundaries.
+
 ## Follow-Up Matrix
 
 Run the primary case first. Then use the same harness for the 100 × 4 KiB scale case and the 1 × 64 MiB transfer case. Run 10 × 64 MiB only for a candidate intended to improve byte-transfer paths. Do not run 100 × 64 MiB as a routine benchmark.

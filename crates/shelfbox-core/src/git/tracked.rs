@@ -3,6 +3,20 @@ use std::{collections::HashSet, path::Path, process::Command};
 use crate::error::{AppError, Result};
 
 pub fn is_tracked(repo_root: &Path, path: &Path) -> Result<bool> {
+    #[cfg(test)]
+    {
+        crate::perf_profile::measure(crate::perf_profile::Phase::GitValidation, || {
+            is_tracked_inner(repo_root, path)
+        })
+    }
+
+    #[cfg(not(test))]
+    {
+        is_tracked_inner(repo_root, path)
+    }
+}
+
+fn is_tracked_inner(repo_root: &Path, path: &Path) -> Result<bool> {
     let output = Command::new("git")
         .args(["ls-files", "--error-unmatch", "--"])
         .arg(path)

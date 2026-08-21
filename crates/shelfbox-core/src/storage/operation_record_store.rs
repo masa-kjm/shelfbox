@@ -46,6 +46,20 @@ pub(crate) fn record_path(store_root: &Path, record_id: &str) -> Result<PathBuf>
 /// lock. An existing record is never overwritten by this method.
 #[allow(dead_code)] // Consumed by the durable mutation journal in Phase 7.
 pub(crate) fn create(store_root: &Path, record: &RecoveryRecord) -> Result<()> {
+    #[cfg(test)]
+    {
+        crate::perf_profile::measure(crate::perf_profile::Phase::RecordSync, || {
+            create_inner(store_root, record)
+        })
+    }
+
+    #[cfg(not(test))]
+    {
+        create_inner(store_root, record)
+    }
+}
+
+fn create_inner(store_root: &Path, record: &RecoveryRecord) -> Result<()> {
     validate_record(record, &records_dir(store_root))?;
     if record.schema_version != OPERATION_RECORD_SCHEMA_VERSION {
         return Err(AppError::OperationRecordMalformed {
@@ -70,6 +84,20 @@ pub(crate) fn create(store_root: &Path, record: &RecoveryRecord) -> Result<()> {
 /// Durably replaces an existing record after a phase or artifact-state update.
 #[allow(dead_code)] // Consumed by the durable mutation journal in Phase 7.
 pub(crate) fn update(store_root: &Path, record: &RecoveryRecord) -> Result<()> {
+    #[cfg(test)]
+    {
+        crate::perf_profile::measure(crate::perf_profile::Phase::RecordSync, || {
+            update_inner(store_root, record)
+        })
+    }
+
+    #[cfg(not(test))]
+    {
+        update_inner(store_root, record)
+    }
+}
+
+fn update_inner(store_root: &Path, record: &RecoveryRecord) -> Result<()> {
     validate_record(record, &records_dir(store_root))?;
     let path = record_path(store_root, &record.record_id)?;
     if !path.is_file() {
@@ -104,6 +132,20 @@ pub(crate) fn update(store_root: &Path, record: &RecoveryRecord) -> Result<()> {
 /// Deletes a completed record and durably syncs the containing directory.
 /// A record already absent after a crash is considered successfully deleted.
 pub(crate) fn remove(store_root: &Path, record_id: &str) -> Result<()> {
+    #[cfg(test)]
+    {
+        crate::perf_profile::measure(crate::perf_profile::Phase::RecordSync, || {
+            remove_inner(store_root, record_id)
+        })
+    }
+
+    #[cfg(not(test))]
+    {
+        remove_inner(store_root, record_id)
+    }
+}
+
+fn remove_inner(store_root: &Path, record_id: &str) -> Result<()> {
     let path = record_path(store_root, record_id)?;
     let durability = match record_durability(store_root, record_id) {
         Ok(durability) => durability,
@@ -243,6 +285,25 @@ pub(crate) fn cleanup_artifact(
     record_id: &str,
     artifact: &ArtifactRecord,
 ) -> Result<ArtifactCleanup> {
+    #[cfg(test)]
+    {
+        crate::perf_profile::measure(crate::perf_profile::Phase::RecordSync, || {
+            cleanup_artifact_inner(store_root, current_repo_root, record_id, artifact)
+        })
+    }
+
+    #[cfg(not(test))]
+    {
+        cleanup_artifact_inner(store_root, current_repo_root, record_id, artifact)
+    }
+}
+
+fn cleanup_artifact_inner(
+    store_root: &Path,
+    current_repo_root: &Path,
+    record_id: &str,
+    artifact: &ArtifactRecord,
+) -> Result<ArtifactCleanup> {
     let path = artifact_path(store_root, current_repo_root, record_id, &artifact.location)?;
     let entry = match platform::inspect_no_follow(&path) {
         Ok(entry) => entry,
@@ -285,6 +346,25 @@ pub(crate) fn cleanup_artifact(
 /// of a path-based `remove_file`, so a user-created replacement is preserved
 /// and reported as a conflict.
 pub(crate) fn cleanup_backup(
+    store_root: &Path,
+    current_repo_root: &Path,
+    record_id: &str,
+    backup: &RecoveryBackupMetadata,
+) -> Result<ArtifactCleanup> {
+    #[cfg(test)]
+    {
+        crate::perf_profile::measure(crate::perf_profile::Phase::RecordSync, || {
+            cleanup_backup_inner(store_root, current_repo_root, record_id, backup)
+        })
+    }
+
+    #[cfg(not(test))]
+    {
+        cleanup_backup_inner(store_root, current_repo_root, record_id, backup)
+    }
+}
+
+fn cleanup_backup_inner(
     store_root: &Path,
     current_repo_root: &Path,
     record_id: &str,

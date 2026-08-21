@@ -18,6 +18,9 @@ pub(crate) mod policy;
 pub(crate) mod storage;
 pub(crate) mod store;
 
+#[cfg(test)]
+pub(crate) mod perf_profile;
+
 // Re-export the most commonly used items so downstream crates only need
 // `use shelfbox_core::prelude::*` for the essentials.
 pub mod prelude {
@@ -42,6 +45,14 @@ mod context_modes;
 #[cfg(test)]
 #[path = "integration_tests/ops_integration.rs"]
 mod ops_integration;
+
+#[cfg(test)]
+#[path = "integration_tests/p2_restore_profile.rs"]
+mod p2_restore_profile;
+
+#[cfg(test)]
+#[path = "integration_tests/p3_multi_item_profile.rs"]
+mod p3_multi_item_profile;
 
 #[cfg(test)]
 #[path = "integration_tests/recovery_integration.rs"]

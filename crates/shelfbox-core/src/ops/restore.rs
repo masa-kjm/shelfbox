@@ -42,6 +42,19 @@ use crate::{
     store::manifest::{self, OwnershipState},
 };
 
+macro_rules! measure_restore_phase {
+    ($phase:ident, $operation:expr) => {{
+        #[cfg(test)]
+        {
+            crate::perf_profile::measure(crate::perf_profile::Phase::$phase, || $operation)
+        }
+        #[cfg(not(test))]
+        {
+            $operation
+        }
+    }};
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RestoreMaterialization {
     ManagedSymlink,
@@ -117,8 +130,10 @@ fn execute_restore(
     })?;
     let store_path = store_relative_path(&ctx.config.store, &plan.store_path)?;
     let location = MaterializationLocation::new(repo_path.clone(), store_path.clone());
-    let materialization =
-        inspect_restore_materialization(&*ports.materializer, &location, &plan.abs_path)?;
+    let materialization = measure_restore_phase!(
+        Materializer,
+        inspect_restore_materialization(&*ports.materializer, &location, &plan.abs_path)
+    )?;
 
     if git::is_tracked(&ctx.repo_root, &plan.abs_path)? {
         return Err(AppError::PathIsTracked {
@@ -203,12 +218,15 @@ fn execute_restore(
 
     match materialization {
         RestoreMaterialization::ManagedSymlink => {
-            let facts = ports
-                .materializer
-                .inspect(MaterializationInspectionRequest {
-                    location: location.clone(),
-                    purpose: InspectionPurpose::PreCommit,
-                })?;
+            let facts = measure_restore_phase!(
+                Materializer,
+                ports
+                    .materializer
+                    .inspect(MaterializationInspectionRequest {
+                        location: location.clone(),
+                        purpose: InspectionPurpose::PreCommit,
+                    })
+            )?;
             ensure_restore_facts(
                 &facts,
                 &plan.abs_path,
@@ -218,13 +236,19 @@ fn execute_restore(
                 location: location.clone(),
                 expected: facts.expected(),
             };
-            let prepared = ports.materializer.prepare(action, &mut journal)?;
-            let fresh = ports
-                .materializer
-                .inspect(MaterializationInspectionRequest {
-                    location: location.clone(),
-                    purpose: InspectionPurpose::PreCommit,
-                })?;
+            let prepared = measure_restore_phase!(
+                Materializer,
+                ports.materializer.prepare(action, &mut journal)
+            )?;
+            let fresh = measure_restore_phase!(
+                Materializer,
+                ports
+                    .materializer
+                    .inspect(MaterializationInspectionRequest {
+                        location: location.clone(),
+                        purpose: InspectionPurpose::PreCommit,
+                    })
+            )?;
             ensure_restore_facts(
                 &fresh,
                 &plan.abs_path,
@@ -233,15 +257,18 @@ fn execute_restore(
             validate_restore_integration(ctx, plan, ignore)?;
             let permit = journal
                 .issue_commit_permit(fresh.write_precondition_guard(prepared.commit_context()))?;
-            ports.materializer.commit(prepared, permit)?;
+            measure_restore_phase!(Materializer, ports.materializer.commit(prepared, permit))?;
         }
         RestoreMaterialization::EqualCopy => {
-            let facts = ports
-                .materializer
-                .inspect(MaterializationInspectionRequest {
-                    location: location.clone(),
-                    purpose: InspectionPurpose::PreCommit,
-                })?;
+            let facts = measure_restore_phase!(
+                Materializer,
+                ports
+                    .materializer
+                    .inspect(MaterializationInspectionRequest {
+                        location: location.clone(),
+                        purpose: InspectionPurpose::PreCommit,
+                    })
+            )?;
             ensure_restore_facts(&facts, &plan.abs_path, RestoreMaterialization::EqualCopy)?;
             validate_restore_integration(ctx, plan, ignore)?;
         }
@@ -255,10 +282,13 @@ fn execute_restore(
         expected_source: ExpectedCanonicalEntry::unchecked(CanonicalEntryKind::RegularFile),
         expected_destination: ExpectedCanonicalEntry::unchecked(CanonicalEntryKind::Missing),
     };
-    let planning = ports.transfer.inspect(CanonicalTransferInspectionRequest {
-        action: inspection,
-        purpose: CanonicalInspectionPurpose::Planning,
-    })?;
+    let planning = measure_restore_phase!(
+        Transfer,
+        ports.transfer.inspect(CanonicalTransferInspectionRequest {
+            action: inspection,
+            purpose: CanonicalInspectionPurpose::Planning,
+        })
+    )?;
     ensure_restore_transfer_facts(&planning, &plan.store_path, &backup_path)?;
     let action = CanonicalTransferAction::Move {
         source: store_path,
@@ -266,16 +296,22 @@ fn execute_restore(
         expected_source: planning.expected_source(),
         expected_destination: planning.expected_destination(),
     };
-    let prepared = ports.transfer.prepare(action.clone(), &mut journal)?;
-    let facts = ports.transfer.inspect(CanonicalTransferInspectionRequest {
-        action: action.clone(),
-        purpose: CanonicalInspectionPurpose::PreCommit,
-    })?;
+    let prepared = measure_restore_phase!(
+        Transfer,
+        ports.transfer.prepare(action.clone(), &mut journal)
+    )?;
+    let facts = measure_restore_phase!(
+        Transfer,
+        ports.transfer.inspect(CanonicalTransferInspectionRequest {
+            action: action.clone(),
+            purpose: CanonicalInspectionPurpose::PreCommit,
+        })
+    )?;
     ensure_restore_transfer_facts(&facts, &plan.store_path, &backup_path)?;
     validate_restore_integration(ctx, plan, ignore)?;
     let permit =
         journal.issue_commit_permit(facts.write_precondition_guard(prepared.commit_context()))?;
-    ports.transfer.commit(prepared, permit)?;
+    measure_restore_phase!(Transfer, ports.transfer.commit(prepared, permit))?;
     let recorded_backup = journal.record_backup_from_path(&backup_path)?;
     journal.advance(OperationPhase::StoreStaged)?;
 
@@ -300,11 +336,14 @@ fn execute_restore(
         ));
     }
     journal.cleanup_all()?;
-    operation_record_store::cleanup_backup(
-        &store_root,
-        &repo_root,
-        &recovery_record_id,
-        &recorded_backup,
+    measure_restore_phase!(
+        RecordSync,
+        operation_record_store::cleanup_backup(
+            &store_root,
+            &repo_root,
+            &recovery_record_id,
+            &recorded_backup,
+        )
     )?;
     journal.advance(OperationPhase::PostCommitValidated)?;
     drop(journal);
@@ -313,9 +352,12 @@ fn execute_restore(
     // The durable restore is complete. Empty item ancestors are only cosmetic
     // residue, so failures here must not turn a successful restore into an
     // error or affect its recovery state.
-    let _ = ports
-        .transfer
-        .prune_empty_item_ancestors(&ctx.repo_store, &plan.store_path);
+    let _ = measure_restore_phase!(
+        Transfer,
+        ports
+            .transfer
+            .prune_empty_item_ancestors(&ctx.repo_store, &plan.store_path)
+    );
 
     Ok(())
 }

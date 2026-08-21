@@ -81,8 +81,23 @@ impl RecoveryFingerprint {
 
     /// Calculates the recovery fingerprint for a file.
     pub fn from_file(path: &Path) -> Result<Self> {
-        let file = File::open(path).map_err(|e| AppError::io(path, e))?;
-        Self::from_reader(file).map_err(|e| AppError::io(path, e))
+        #[cfg(test)]
+        {
+            crate::perf_profile::measure_result_with_bytes(
+                crate::perf_profile::Phase::RecoveryFingerprint,
+                || {
+                    let file = File::open(path).map_err(|error| AppError::io(path, error))?;
+                    Self::from_reader_with_byte_count(file)
+                        .map_err(|error| AppError::io(path, error))
+                },
+            )
+        }
+
+        #[cfg(not(test))]
+        {
+            let file = File::open(path).map_err(|e| AppError::io(path, e))?;
+            Self::from_reader(file).map_err(|e| AppError::io(path, e))
+        }
     }
 
     /// Returns `true` when the file currently has this exact fingerprint.
@@ -104,6 +119,24 @@ impl RecoveryFingerprint {
             algorithm: RecoveryFingerprintAlgorithm::Sha256,
             digest_hex: encode_lower_hex(bytes),
         }
+    }
+
+    #[cfg(test)]
+    fn from_reader_with_byte_count(mut reader: impl Read) -> IoResult<(Self, u64)> {
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; STREAM_BUFFER_SIZE_BYTES];
+        let mut bytes = 0_u64;
+
+        loop {
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            bytes += read as u64;
+        }
+
+        Ok((Self::from_sha256_bytes(&hasher.finalize()), bytes))
     }
 }
 
