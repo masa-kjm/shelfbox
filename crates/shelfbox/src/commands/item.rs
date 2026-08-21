@@ -45,8 +45,7 @@ pub enum ItemCommand {
         #[arg(long)]
         keep_ignore: bool,
 
-        /// Legacy detach: retain the observed materialization, store item,
-        /// manifest entry, and exclude while marking ownership detached.
+        /// Legacy detach: retain the observed materialization, store item, manifest entry, and exclude while marking ownership detached.
         #[arg(long)]
         keep_store: bool,
     },
@@ -62,8 +61,7 @@ pub enum ItemCommand {
         dry_run: bool,
 
         /// Allow overwriting a symlink that points to an unexpected target.
-        /// Without this flag, `repair` refuses to touch wrong-target symlinks
-        /// to avoid silently masking stale links from reclones or copied repos.
+        /// Without this flag, `repair` refuses to touch wrong-target symlinks to avoid silently masking stale links from reclones or copied repos.
         #[arg(long)]
         force: bool,
     },
@@ -104,9 +102,7 @@ pub enum ItemCommand {
 
     /// Re-attach a detached item while preserving its observed materialization.
     ///
-    /// A detached item is one whose ownership was intentionally unlinked via
-    /// `item restore --keep-store`.  `relink` transitions the item from
-    /// `detached` back to `attached` and recreates the materialization if needed.
+    /// A detached item is one whose ownership was intentionally unlinked via `item restore --keep-store`.  `relink` transitions the item from `detached` back to `attached` and recreates the materialization if needed.
     Relink {
         /// Files to relink (relative to repo root).
         #[arg(required = true, value_name = "PATH")]
@@ -181,7 +177,6 @@ pub fn run_item(
         ItemCommand::Add { paths, dry_run } => {
             preflight_mutation(store_override, "item add", dry_run)?;
             cmd_add(cwd, store_override, &paths, dry_run)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         ItemCommand::Restore {
@@ -201,7 +196,6 @@ pub fn run_item(
                 keep_ignore,
                 keep_store,
             )?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         ItemCommand::Repair {
@@ -211,7 +205,6 @@ pub fn run_item(
         } => {
             preflight_mutation(store_override, "item repair", dry_run)?;
             cmd_repair(cwd, store_override, &paths, dry_run, force)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         ItemCommand::Sync {
@@ -222,7 +215,6 @@ pub fn run_item(
         } => {
             preflight_mutation(store_override, "item sync", dry_run)?;
             cmd_sync(cwd, store_override, &paths, from, dry_run, yes)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         ItemCommand::Materialize {
@@ -232,7 +224,6 @@ pub fn run_item(
         } => {
             preflight_mutation(store_override, "item materialize", dry_run)?;
             cmd_materialize(cwd, store_override, &paths, strategy, dry_run)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         ItemCommand::Relink {
@@ -243,7 +234,6 @@ pub fn run_item(
         } => {
             preflight_mutation(store_override, "item relink", dry_run)?;
             cmd_relink(cwd, store_override, &paths, dry_run, from, yes)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         ItemCommand::List { format, verbose } => {
@@ -258,7 +248,6 @@ pub fn run_item(
         } => {
             preflight_mutation(store_override, "item move", dry_run)?;
             cmd_move(cwd, store_override, &old, &new_path, dry_run)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         ItemCommand::Info { path, format } => {
@@ -271,18 +260,6 @@ pub fn run_item(
 fn preflight_mutation(store_override: Option<&Path>, operation: &str, dry_run: bool) -> Result<()> {
     if !dry_run {
         item::preflight_mutation_durability(store_override, operation)?;
-    }
-    Ok(())
-}
-
-fn warn_best_effort(store_override: Option<&Path>, dry_run: bool) -> Result<()> {
-    if !dry_run
-        && shelfbox_core::api::config::load(store_override)?.mutation_durability
-            == shelfbox_core::domain::mutation_durability::MutationDurability::BestEffort
-    {
-        eprintln!(
-            "warning: best-effort mutation durability is active; complete recovery after power loss or forced termination is not guaranteed."
-        );
     }
     Ok(())
 }
@@ -354,9 +331,7 @@ fn build_item_context(
             .ok_or_else(|| anyhow::anyhow!("Run `shelfbox repo reclaim` first"));
     }
 
-    // Verify Git context before constructing the write-capable context.  The
-    // latter may initialize store metadata, while an invalid repository
-    // context must fail without changing the store.
+    // Verify Git context before constructing the write-capable context.  The latter may initialize store metadata, while an invalid repository context must fail without changing the store.
     if require_existing_repo && read_only.repo.is_none() {
         return Err(anyhow::anyhow!("Run `shelfbox repo reclaim` first"));
     }
@@ -1191,8 +1166,7 @@ fn status_issue_label(code: item::StatusIssueCode) -> &'static str {
     }
 }
 
-/// Exit codes are a direct projection of core policy severity: 0 healthy,
-/// 1 warning-only, and 2 when any error exists.
+/// Exit codes are a direct projection of core policy severity: 0 healthy, 1 warning-only, and 2 when any error exists.
 fn classify_status_exit(statuses: &[item::ItemStatusV2]) -> ExitCode {
     let has_error = statuses
         .iter()

@@ -172,7 +172,7 @@ fn windows_require_fails_closed_and_best_effort_copy_add_is_opt_in() {
         store_args(best_effort_store.path(), ["item", "add", "secret.txt"]),
     );
     best_effort.assert_success();
-    assert!(best_effort
+    assert!(!best_effort
         .stderr
         .contains("best-effort mutation durability is active"));
     assert!(std::fs::symlink_metadata(&source).unwrap().is_file());

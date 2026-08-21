@@ -60,19 +60,16 @@ pub fn run_store(
         StoreCommand::Gc { dry_run, yes } => {
             preflight_mutation(store_override, "store gc", dry_run)?;
             cmd_store_gc(store_override, dry_run, yes)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         StoreCommand::RebuildIndex { dry_run } => {
             preflight_mutation(store_override, "store rebuild-index", dry_run)?;
             cmd_store_rebuild_index(store_override, dry_run)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         StoreCommand::MigrateManifests { dry_run } => {
             preflight_mutation(store_override, "store migrate-manifests", dry_run)?;
             cmd_store_migrate_manifests(store_override, dry_run)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -81,18 +78,6 @@ pub fn run_store(
 fn preflight_mutation(store_override: Option<&Path>, operation: &str, dry_run: bool) -> Result<()> {
     if !dry_run {
         api::store::preflight_mutation_durability(store_override, operation)?;
-    }
-    Ok(())
-}
-
-fn warn_best_effort(store_override: Option<&Path>, dry_run: bool) -> Result<()> {
-    if !dry_run
-        && api::config::load(store_override)?.mutation_durability
-            == shelfbox_core::domain::mutation_durability::MutationDurability::BestEffort
-    {
-        eprintln!(
-            "warning: best-effort mutation durability is active; complete recovery after power loss or forced termination is not guaranteed."
-        );
     }
     Ok(())
 }

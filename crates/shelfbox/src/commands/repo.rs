@@ -109,19 +109,16 @@ pub fn run_repo(
         RepoCommand::Repair { dry_run, force } => {
             preflight_mutation(store_override, "repo repair", dry_run)?;
             cmd_repo_repair(cwd, store_override, dry_run, force)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(ExitCode::SUCCESS)
         }
         RepoCommand::Sync { from, dry_run, yes } => {
             preflight_mutation(store_override, "repo sync", dry_run)?;
             let exit = cmd_repo_sync(cwd, store_override, from, dry_run, yes)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(exit)
         }
         RepoCommand::Materialize { strategy, dry_run } => {
             preflight_mutation(store_override, "repo materialize", dry_run)?;
             let exit = cmd_repo_materialize(cwd, store_override, strategy, dry_run)?;
-            warn_best_effort(store_override, dry_run)?;
             Ok(exit)
         }
         RepoCommand::Gc { dry_run, yes } => {
@@ -131,7 +128,6 @@ pub fn run_repo(
         RepoCommand::Reclaim { repo_id } => {
             preflight_mutation(store_override, "repo reclaim", false)?;
             cmd_repo_reclaim(cwd, store_override, repo_id.as_deref())?;
-            warn_best_effort(store_override, false)?;
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -140,18 +136,6 @@ pub fn run_repo(
 fn preflight_mutation(store_override: Option<&Path>, operation: &str, dry_run: bool) -> Result<()> {
     if !dry_run {
         repo::preflight_mutation_durability(store_override, operation)?;
-    }
-    Ok(())
-}
-
-fn warn_best_effort(store_override: Option<&Path>, dry_run: bool) -> Result<()> {
-    if !dry_run
-        && shelfbox_core::api::config::load(store_override)?.mutation_durability
-            == shelfbox_core::domain::mutation_durability::MutationDurability::BestEffort
-    {
-        eprintln!(
-            "warning: best-effort mutation durability is active; complete recovery after power loss or forced termination is not guaranteed."
-        );
     }
     Ok(())
 }
@@ -488,8 +472,7 @@ fn cmd_repo_gc(cwd: &Path, store_override: Option<&Path>, dry_run: bool, yes: bo
     let report = repo::integrity_check(&ctx)?;
 
     // Inform the user about items protected from GC by their ownership state.
-    // These are in the manifest and will never appear as FS orphans, but it is
-    // useful to surface them so the user knows what `gc` is not collecting.
+    // These are in the manifest and will never appear as FS orphans, but it is useful to surface them so the user knows what `gc` is not collecting.
     let detached_count = ctx
         .manifest
         .items
@@ -901,8 +884,7 @@ fn repo_status_issue_label(code: repo::StatusIssueCode) -> &'static str {
     }
 }
 
-/// Exit codes project core severity, with repository-level observations adding
-/// warnings only.
+/// Exit codes project core severity, with repository-level observations adding warnings only.
 fn classify_integrity_exit(report: &repo::IntegrityReportV2) -> ExitCode {
     let has_error = report
         .items
