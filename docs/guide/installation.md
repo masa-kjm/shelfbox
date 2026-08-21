@@ -39,6 +39,13 @@ curl -fsSL https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/inst
 > [!IMPORTANT]
 > Before first use, Windows requires [additional setup](#required-setup).
 
+### Scoop
+
+```powershell
+scoop bucket add masa-kjm https://github.com/masa-kjm/scoop-bucket
+scoop install shelfbox
+```
+
 ### Pre-built Binary - Windows
 
 ```powershell

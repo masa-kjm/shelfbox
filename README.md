@@ -2,13 +2,13 @@
 
 ## Overview
 
-Keep local files—notes, AI context, and personal configs—**visible in your editor** but **out of Git**. Store them portably across repositories, worktrees, and reclones.
+Shelfbox keeps personal files—AI agent instructions and skills, notes, scripts, and machine-local configuration—**visible in your editor** but **out of Git**. It stores canonical content in a local store and helps restore it after recloning or in a worktree.
 
 ![shelfbox overview diagram](demo/shelfbox-overview.svg)
 
 ## Why Shelfbox
 
-Local AI context files, notes, scripts, and machine-specific files often need to live inside a repository tree so editors and tools can discover them—but they shouldn't be committed.
+AI agent instructions, skills, notes, scripts, and machine-local configuration often need to live inside a repository tree so editors and tools can discover them—but they shouldn't be committed.
 
 **Common workarounds have limits:**
 
@@ -44,6 +44,8 @@ shelfbox item list --format plain
 
 For an annotated first workflow, see [Start Managing a Local File](docs/guide/workflows.md#start-managing-a-local-file).
 
+For linked Git worktrees, run `shelfbox repo repair` in the new worktree to restore managed files. See [Use a Linked Git Worktree](docs/guide/workflows.md#use-a-linked-git-worktree).
+
 ## Installation
 
 For source builds and installation script options, see the [installation guide](docs/guide/installation.md).  
@@ -57,7 +59,9 @@ To remove shelfbox and optionally clean up its local data, see [Uninstallation](
 brew install masa-kjm/tap/shelfbox
 ```
 
-#### [Pre-built binary](https://github.com/masa-kjm/shelfbox/releases)
+#### Pre-built binary
+
+Download a pre-built binary from [GitHub Releases](https://github.com/masa-kjm/shelfbox/releases).
 
 The Unix installer uses `~/.local/bin` by default.
 
@@ -74,7 +78,9 @@ scoop bucket add masa-kjm https://github.com/masa-kjm/scoop-bucket
 scoop install shelfbox
 ```
 
-#### [Pre-built binary](https://github.com/masa-kjm/shelfbox/releases)
+#### Pre-built binary
+
+Download a pre-built binary from [GitHub Releases](https://github.com/masa-kjm/shelfbox/releases).
 
 The PowerShell installer uses `$Env:LOCALAPPDATA\Programs\shelfbox\bin` by default.
 
@@ -89,12 +95,13 @@ irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1
 > shelfbox config set mutation_durability best-effort
 > ```
 > 
-> Windows does not provide the directory-level durability guarantees required by the default require mode.
+> Windows does not provide the directory-level durability guarantees required by the default require mode.  
 > Symlink materialization also requires Developer Mode or an elevated shell. If symlinks are unavailable, use [copy mode](docs/spec/copy-mode.md).
 
 ## More Features
 
 - **Recovery after reclone** — re-associate a new clone with an existing shelf after restoring `repos/`: [`repo reclaim`](docs/reference/repo-commands.md#repo-reclaim)
+- **Linked Git worktrees** — reuse shelved items across worktrees by running `repo repair` in a newly created worktree: [Use a Linked Git Worktree](docs/guide/workflows.md#use-a-linked-git-worktree)
 - **Directory shelving** — shelve eligible files under a directory; each file remains an independent item: [`item add <PATH>`](docs/reference/item-commands.md#item-add-path)
 - **Copy mode** — leave an independent regular file instead of a symlink, useful when symlink creation is restricted: [Copy mode spec](docs/spec/copy-mode.md)
 - **Store recovery** — rebuild local cache files from canonical manifests: [`store rebuild-index`](docs/reference/store-commands.md#store-rebuild-index)
