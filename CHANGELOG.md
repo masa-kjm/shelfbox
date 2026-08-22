@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.3
+
+- Added `shelfbox item restore --all` to restore every managed item in the current repository.
+- Improved `item add` and `item restore` performance by reusing verified operation setup across multi-item commands.
+- Fixed redundant best-effort durability warnings after successful item mutations.
+- Added crates.io distribution; install with `cargo install shelfbox --locked`.
+
 ## v0.9.2
 
 - Added release automation to update the Homebrew tap after publishing tagged artifacts.
