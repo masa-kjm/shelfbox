@@ -1,0 +1,4 @@
+interface:
+  display_name: "Suggest Shelfbox Change Message"
+  short_description: "Propose commit and PR messages from change evidence"
+  default_prompt: "Use $suggest-shelfbox-change-message to propose a squash commit and pull-request message for this Shelfbox change."
