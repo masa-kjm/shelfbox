@@ -98,6 +98,16 @@ irm https://raw.githubusercontent.com/masa-kjm/shelfbox/main/scripts/install.ps1
 > Windows does not provide the directory-level durability guarantees required by the default require mode.  
 > Symlink materialization also requires Developer Mode or an elevated shell. If symlinks are unavailable, use [copy mode](docs/spec/copy-mode.md).
 
+### Other Installation Methods
+
+#### Cargo
+
+With Rust 1.75 or later installed:
+
+```sh
+cargo install shelfbox --locked
+```
+
 ## More Features
 
 - **Recovery after reclone** — re-associate a new clone with an existing shelf after restoring `repos/`: [`repo reclaim`](docs/reference/repo-commands.md#repo-reclaim)

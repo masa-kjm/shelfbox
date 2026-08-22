@@ -2,9 +2,15 @@
 name = "shelfbox-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core library for shelfbox: shelve repo-local files outside Git"
+readme = "README.md"
+keywords = ["files", "git", "worktree", "gitignore", "dotfiles"]
+categories = ["filesystem"]
+include = ["/src/**", "/tests/**", "/README.md", "/LICENSE"]
+publish = ["crates-io"]
 
 [dependencies]
 serde.workspace = true

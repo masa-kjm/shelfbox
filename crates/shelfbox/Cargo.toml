@@ -2,16 +2,22 @@
 name = "shelfbox"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Shelve repo-local files outside Git, keeping them visible in your editor"
+readme = "README.md"
+keywords = ["cli", "git", "worktree", "gitignore", "dotfiles"]
+categories = ["command-line-utilities", "filesystem"]
+include = ["/src/**", "/tests/**", "/README.md", "/LICENSE"]
+publish = ["crates-io"]
 
 [[bin]]
 name = "shelfbox"
 path = "src/main.rs"
 
 [dependencies]
-shelfbox-core = { path = "../shelfbox-core" }
+shelfbox-core.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 anyhow.workspace = true
