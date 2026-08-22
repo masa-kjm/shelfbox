@@ -1,6 +1,6 @@
 # Installation / Uninstallation
 
-Install `shelfbox` using Homebrew, a pre-built binary, or a source build.
+Install `shelfbox` using Cargo, Homebrew, Scoop, a pre-built binary, or a source build.
 
 ## Linux and macOS
 
@@ -82,6 +82,18 @@ shelfbox config set mutation_durability best-effort
 >
 > Copy mode selects a regular-file materialization; it does not change the durability policy. `best-effort` continues only when directory durability is unavailable and does not guarantee complete recovery after power loss or forced termination. See the [Copy mode specification](../spec/copy-mode.md) for its sync and recovery behavior.
 
+## Other Installation Methods
+
+### Cargo
+
+Cargo installation requires Rust 1.75 or later:
+
+```sh
+cargo install shelfbox --locked
+```
+
+Cargo installs the `shelfbox` executable in Cargo's installation root. Ensure its `bin` directory is in your `PATH`.
+
 ## Build from Source
 
 Building from source requires Git and Rust 1.75+.
@@ -91,7 +103,7 @@ Clone the repository, then install the CLI from its workspace:
 ```sh
 git clone https://github.com/masa-kjm/shelfbox.git
 cd shelfbox
-cargo install --path crates/shelfbox
+cargo install --path crates/shelfbox --locked
 ```
 
 ## Uninstallation
@@ -107,6 +119,12 @@ shelfbox config path
 > The store contains the canonical content of managed items. Restore every item you want to keep with `shelfbox item restore <PATH>`, or back up the store, before deleting it. Removing a store without restoring its items permanently removes their canonical content and leaves their repository materializations unusable.
 
 Remove the executable with the tool that installed it.  
+
+For Cargo, run:
+
+```sh
+cargo uninstall shelfbox
+```
 
 For Homebrew, run:
 

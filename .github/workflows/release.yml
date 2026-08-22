@@ -149,10 +149,66 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  publish-crates:
+    name: Publish crates.io packages
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      VERSION: ${{ github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify crates.io token
+        shell: bash
+        run: test -n "$CARGO_REGISTRY_TOKEN"
+
+      - name: Publish shelfbox-core
+        shell: bash
+        run: |
+          version="${VERSION#v}"
+          if curl --fail --silent --show-error "https://crates.io/api/v1/crates/shelfbox-core/${version}" > /dev/null; then
+            echo "shelfbox-core ${version} is already published"
+          else
+            cargo publish --locked --package shelfbox-core
+          fi
+
+      - name: Wait for shelfbox-core to become available
+        shell: bash
+        run: |
+          version="${VERSION#v}"
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error "https://crates.io/api/v1/crates/shelfbox-core/${version}" > /dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "shelfbox-core ${version} did not become available on crates.io" >&2
+          exit 1
+
+      - name: Publish shelfbox
+        shell: bash
+        run: |
+          version="${VERSION#v}"
+          if curl --fail --silent --show-error "https://crates.io/api/v1/crates/shelfbox/${version}" > /dev/null; then
+            echo "shelfbox ${version} is already published"
+          else
+            cargo publish --locked --package shelfbox
+          fi
+
   release:
     name: Create GitHub Release
     if: github.event_name == 'push'
-    needs: build
+    needs: publish-crates
     runs-on: ubuntu-latest
     permissions:
       contents: write
