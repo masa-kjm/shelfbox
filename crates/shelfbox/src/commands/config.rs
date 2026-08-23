@@ -68,7 +68,7 @@ fn find_key(key: &str) -> Option<&'static KeyMeta> {
 // ── config subcommands ──────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Subcommand)]
-pub enum ConfigCommand {
+pub(crate) enum ConfigCommand {
     /// Print the value of a configuration key.
     Get {
         #[arg(value_name = "KEY")]
@@ -105,7 +105,7 @@ pub enum ConfigCommand {
 
 // ── config command runner ───────────────────────────────────────────────────────────────────────
 
-pub fn run_config(
+pub(crate) fn run_config(
     command: ConfigCommand,
     _cwd: &Path,
     store_override: Option<&Path>,

@@ -12,7 +12,7 @@ use crate::commands::{format::OutputFormat, util::warn_reclaim_candidates_if_una
 // ── repo subcommands ────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Subcommand)]
-pub enum RepoCommand {
+pub(crate) enum RepoCommand {
     /// List all repositories known to the store.
     List {
         /// Output format.
@@ -93,7 +93,7 @@ pub enum RepoCommand {
 
 // ── repo command runner ─────────────────────────────────────────────────────────────────────────
 
-pub fn run_repo(
+pub(crate) fn run_repo(
     command: RepoCommand,
     cwd: &Path,
     store_override: Option<&Path>,

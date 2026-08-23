@@ -16,17 +16,17 @@ use crate::commands::{
 /// Shelve repo-local files outside Git, keeping them visible in your editor.
 #[derive(Debug, Parser)]
 #[command(name = "shelfbox", version, about)]
-pub struct Cli {
+pub(crate) struct Cli {
     /// Override the store directory (takes precedence over config).
     #[arg(long, global = true, value_name = "PATH")]
-    pub store: Option<PathBuf>,
+    store: Option<PathBuf>,
 
     #[command(subcommand)]
-    pub command: Command,
+    command: Command,
 }
 
 #[derive(Debug, clap::Subcommand)]
-pub enum Command {
+enum Command {
     /// Manage individual shelved items.
     Item {
         #[command(subcommand)]
@@ -71,7 +71,7 @@ pub enum Command {
 
 // ── Entry point ─────────────────────────────────────────────────────────────────────────────────
 
-pub fn run() -> Result<ExitCode> {
+pub(super) fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     let cwd = std::env::current_dir().context("failed to get current directory")?;
     let store_override = cli.store.as_deref();
