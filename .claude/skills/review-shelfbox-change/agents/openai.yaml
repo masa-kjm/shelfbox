@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Shelfbox Changes"
+  short_description: "Review Shelfbox PRs for filesystem safety"
+  default_prompt: "Use $review-shelfbox-change to review this Shelfbox PR against its issue."

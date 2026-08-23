@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Shelfbox Documentation"
+  short_description: "Keep Shelfbox docs accurate and contract-aligned"
+  default_prompt: "Use $maintain-shelfbox-docs to update this Shelfbox documentation change."
