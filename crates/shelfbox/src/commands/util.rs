@@ -7,9 +7,8 @@ use shelfbox_core::api::repo;
 /// - Absolute paths are returned as-is (after normalisation).
 /// - Relative paths are resolved against `cwd`.
 ///
-/// `.` and `..` components are collapsed lexically so the result matches
-/// what other parts of the code expect when comparing against `repo_root`.
-pub fn resolve_path(cwd: &Path, path: &Path) -> PathBuf {
+/// `.` and `..` components are collapsed lexically so the result matches what other parts of the code expect when comparing against `repo_root`.
+pub(super) fn resolve_path(cwd: &Path, path: &Path) -> PathBuf {
     let base = if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -19,7 +18,7 @@ pub fn resolve_path(cwd: &Path, path: &Path) -> PathBuf {
 }
 
 /// Collapses `.` and `..` components without touching the filesystem.
-pub fn normalize_path(path: &Path) -> PathBuf {
+fn normalize_path(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
@@ -34,7 +33,7 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 }
 
 /// Prints a best-effort reclaim hint when this clone has no local index match but existing manifests contain positive-scoring candidates.
-pub fn warn_reclaim_candidates_if_unassociated(cwd: &Path, store_override: Option<&Path>) {
+pub(super) fn warn_reclaim_candidates_if_unassociated(cwd: &Path, store_override: Option<&Path>) {
     let Ok(current) = repo::current_git_context(cwd) else {
         return;
     };
@@ -42,7 +41,7 @@ pub fn warn_reclaim_candidates_if_unassociated(cwd: &Path, store_override: Optio
 }
 
 /// Prints a best-effort reclaim hint using Git metadata already discovered for the current top-level command.
-pub fn warn_reclaim_candidates_for_current_if_unassociated(
+pub(super) fn warn_reclaim_candidates_for_current_if_unassociated(
     current: &repo::CurrentGitContext,
     store_override: Option<&Path>,
 ) {

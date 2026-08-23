@@ -11,7 +11,7 @@ use crate::commands::util::{resolve_path, warn_reclaim_candidates_for_current_if
 // ── item subcommands ────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Subcommand)]
-pub enum ItemCommand {
+pub(crate) enum ItemCommand {
     /// Move a file into the store and materialize it in the repository.
     Add {
         /// Files to shelve (relative to repo root).
@@ -168,7 +168,7 @@ pub enum ItemCommand {
 
 // ── item command runner ─────────────────────────────────────────────────────────────────────────
 
-pub fn run_item(
+pub(crate) fn run_item(
     command: ItemCommand,
     cwd: &Path,
     store_override: Option<&Path>,
@@ -266,14 +266,14 @@ fn preflight_mutation(store_override: Option<&Path>, operation: &str, dry_run: b
 
 /// CLI spelling for the core's single explicit synchronization direction.
 #[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum SyncFrom {
+pub(crate) enum SyncFrom {
     Store,
     Repo,
 }
 
 /// CLI spelling for an explicit repository materialization strategy.
 #[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum MaterializationStrategyArg {
+pub(crate) enum MaterializationStrategyArg {
     Symlink,
     Copy,
 }
@@ -291,7 +291,7 @@ impl From<MaterializationStrategyArg>
 
 /// CLI spelling for an explicit divergent detached-copy relink direction.
 #[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum RelinkFrom {
+pub(crate) enum RelinkFrom {
     Store,
     Repo,
 }

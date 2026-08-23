@@ -10,11 +10,10 @@ use shelfbox_core::api::{config, repo};
 // ── internal subcommands ────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Subcommand)]
-pub enum InternalCommand {
+pub(crate) enum InternalCommand {
     /// Dump internal state for debugging.
     ///
-    /// By default, the home directory prefix in all paths is replaced with `~`
-    /// to reduce the risk of leaking absolute paths in AI pastes or public issues.
+    /// By default, the home directory prefix in all paths is replaced with `~` to reduce the risk of leaking absolute paths in AI pastes or public issues.
     /// Use `--allow-sensitive` to print raw paths.
     Debug {
         /// Print raw absolute paths instead of masking the home directory with `~`.
@@ -32,7 +31,7 @@ pub enum InternalCommand {
 
 // ── internal command runner ─────────────────────────────────────────────────────────────────────
 
-pub fn run_internal(
+pub(crate) fn run_internal(
     command: InternalCommand,
     cwd: &Path,
     store_override: Option<&Path>,
@@ -48,8 +47,7 @@ pub fn run_internal(
 // ── subcommand implementations ─────────────────────────────────────────────────────────────────
 
 /// Mask the home directory prefix in `path` with `~`.
-/// Returns the original path unchanged if `dirs::home_dir()` is unavailable
-/// or the path does not start with the home directory.
+/// Returns the original path unchanged if `dirs::home_dir()` is unavailable or the path does not start with the home directory.
 fn mask_home(path: &Path) -> String {
     if let Some(home) = dirs::home_dir() {
         if let Ok(rel) = path.strip_prefix(&home) {

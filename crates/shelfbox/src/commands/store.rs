@@ -9,7 +9,7 @@ use shelfbox_core::api;
 // ── store subcommands ──────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Subcommand)]
-pub enum StoreCommand {
+pub(crate) enum StoreCommand {
     /// Show store metadata (path, repo count, disk usage).
     Info,
 
@@ -46,7 +46,7 @@ pub enum StoreCommand {
 
 // ── store command runner ────────────────────────────────────────────────────────────────────────
 
-pub fn run_store(
+pub(crate) fn run_store(
     command: StoreCommand,
     _cwd: &Path,
     store_override: Option<&Path>,
