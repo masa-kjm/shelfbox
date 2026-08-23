@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Shelfbox Release"
+  short_description: "Prepare and validate Shelfbox release PRs"
+  default_prompt: "Use $prepare-shelfbox-release to prepare release vX.Y.Z for Shelfbox."
