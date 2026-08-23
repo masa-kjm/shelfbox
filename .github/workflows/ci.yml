@@ -97,7 +97,7 @@ jobs:
         run: cargo test -p shelfbox-core --locked copy_add_succeeds_without_link_strategy --lib
 
       - name: Copy CLI workflow
-        run: cargo test -p shelfbox --locked --test cli_behavior_lock copy_materialization_is_available_through_config_and_item_paths
+        run: cargo test -p shelfbox --locked --test cli_integration copy_materialization_is_available_through_config_and_item_paths
 
   linux-cross-device:
     name: Linux cross-device Copy and symlink add
@@ -209,7 +209,7 @@ jobs:
       # explicit local opt-in completes a Copy add. Symlink capability is not
       # part of this lane and remains independently probed elsewhere.
       - name: Require fail-closed; best-effort Copy update
-        run: cargo test -p shelfbox --locked --test cli_behavior_lock windows_require_fails_closed_and_best_effort_copy_add_is_opt_in
+        run: cargo test -p shelfbox --locked --test cli_integration windows_require_fails_closed_and_best_effort_copy_add_is_opt_in
 
   compatibility-boundaries:
     name: JSON compatibility and architecture boundaries
@@ -234,4 +234,4 @@ jobs:
         run: cargo test -p shelfbox-core --locked --test architecture_boundaries
 
       - name: Public JSON and CLI compatibility lock
-        run: cargo test -p shelfbox --locked --test cli_behavior_lock
+        run: cargo test -p shelfbox --locked --test cli_integration
