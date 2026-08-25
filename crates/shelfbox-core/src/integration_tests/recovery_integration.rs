@@ -4,7 +4,6 @@ use tempfile::TempDir;
 
 use shelfbox_core::{
     context,
-    fs::{DefaultLinkStrategy, LinkStrategy},
     git::exclude::{GitInfoExclude, IgnoreBackend},
     ops,
     store::{
@@ -46,14 +45,7 @@ fn add_managed_file(
     let mut ctx = context::build_create_or_load(repo, Some(store)).unwrap();
     let repo_id = ctx.repo_id.clone();
     let repo_store = ctx.repo_store.clone();
-    common::add_report(
-        &mut ctx,
-        &file_path,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &file_path, false, &GitInfoExclude).unwrap();
     (repo_id, repo_store)
 }
 
@@ -106,14 +98,7 @@ fn move_repository_path_reuses_repoid_via_git_common_dir() {
     assert_eq!(moved_ctx.repo_id, repo_id);
     assert_eq!(moved_ctx.git_common_dir, original_common);
 
-    common::add_report(
-        &mut moved_ctx,
-        &next,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut moved_ctx, &next, false, &GitInfoExclude).unwrap();
 
     let idx = index::load(store.path()).unwrap();
     let entry = idx.get(&repo_id).unwrap();
@@ -144,14 +129,7 @@ fn rename_repository_directory_reuses_repoid_via_git_common_dir() {
     assert_eq!(renamed_ctx.repo_id, repo_id);
     assert_eq!(renamed_ctx.git_common_dir, original_common);
 
-    common::add_report(
-        &mut renamed_ctx,
-        &next,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut renamed_ctx, &next, false, &GitInfoExclude).unwrap();
 
     let idx = index::load(store.path()).unwrap();
     let entry = idx.get(&repo_id).unwrap();
@@ -198,7 +176,7 @@ fn renamed_repo_store_dir_rebuild_index_restores_locator_and_repair_succeeds() {
 
     assert_eq!(repair.symlinks_repaired, 1);
     assert!(repair.exclude_updated);
-    assert!(DefaultLinkStrategy.is_managed_link(&repo_file, store.path()));
+    assert!(common::is_managed_symlink(&repo_file, store.path()));
     assert!(GitInfoExclude.has_entry(repo.path(), "secret.env").unwrap());
 }
 
@@ -304,7 +282,7 @@ fn repair_after_reclaim_restores_symlinks_and_exclude_entries() {
 
     assert_eq!(repair.symlinks_repaired, 1);
     assert!(repair.exclude_updated);
-    assert!(DefaultLinkStrategy.is_managed_link(&repaired_path, store.path()));
+    assert!(common::is_managed_symlink(&repaired_path, store.path()));
     assert_eq!(std::fs::read_to_string(&repaired_path).unwrap(), "secret");
     assert!(GitInfoExclude
         .has_entry(reclone.path(), "secret.env")
@@ -325,14 +303,7 @@ fn reclaim_rejects_current_repo_with_items_before_mutation() {
         context::build_create_or_load(current.path(), Some(store.path())).unwrap();
     let current_file = current.path().join("current.env");
     std::fs::write(&current_file, "current").unwrap();
-    common::add_report(
-        &mut current_ctx,
-        &current_file,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut current_ctx, &current_file, false, &GitInfoExclude).unwrap();
     let index_before = std::fs::read_to_string(index::index_path(store.path())).unwrap();
 
     let result = ops::reclaim::check_reclaim_precondition(Some(&current_ctx.manifest));

@@ -1,8 +1,6 @@
 /// Shared test helpers used by all integration test binaries.
 ///
-/// Rust integration test files are separate crates; placing helpers here
-/// avoids duplicating git setup code across `ops_integration.rs`,
-/// `chaos_integration.rs`, and `scenario_integration.rs`.
+/// Rust integration test files are separate crates; placing helpers here avoids duplicating git setup code across `ops_integration.rs`, `chaos_integration.rs`, and `scenario_integration.rs`.
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command as StdCommand;
@@ -13,10 +11,7 @@ use tempfile::TempDir;
 use crate::{
     context::RepoContext,
     error::Result,
-    fs::{
-        canonical_transfer::DefaultCanonicalTransfer, materializer::DefaultMaterializer,
-        LinkStrategy,
-    },
+    fs::{canonical_transfer::DefaultCanonicalTransfer, materializer::DefaultMaterializer},
     git::exclude::IgnoreBackend,
     ops,
     plan::{item_add::ItemAddReport, item_restore::ItemRestoreReport},
@@ -28,21 +23,43 @@ pub fn materializer(ctx: &RepoContext) -> DefaultMaterializer {
     DefaultMaterializer::new(ctx.repo_root.clone(), ctx.repo_store.clone())
 }
 
-/// Invokes the add operation with concrete ports while preserving legacy test
-/// control over the link adapter.
+pub fn is_managed_symlink(link_path: &Path, store_root: &Path) -> bool {
+    if !link_path
+        .symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return false;
+    }
+
+    let Ok(target) = std::fs::read_link(link_path) else {
+        return false;
+    };
+    let resolved_target = if target.is_absolute() {
+        target
+    } else {
+        match link_path.parent() {
+            Some(parent) => parent.join(target),
+            None => target,
+        }
+    };
+    let resolved_target = resolved_target.canonicalize().unwrap_or(resolved_target);
+    let store_root = store_root
+        .canonicalize()
+        .unwrap_or_else(|_| store_root.to_path_buf());
+
+    resolved_target.starts_with(store_root)
+}
+
+/// Invokes the add operation with production filesystem ports.
 #[allow(dead_code)]
 pub fn add_report(
     ctx: &mut RepoContext,
     abs_path: &Path,
     dry_run: bool,
-    link: &dyn LinkStrategy,
     ignore: &dyn IgnoreBackend,
 ) -> Result<ItemAddReport> {
-    let mut materializer = DefaultMaterializer::with_link_strategy(
-        ctx.repo_root.clone(),
-        ctx.config.store.clone(),
-        link,
-    );
+    let mut materializer =
+        DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     let mut transfer =
         DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     ops::add::add_report(
@@ -55,21 +72,16 @@ pub fn add_report(
     )
 }
 
-/// Invokes directory add with concrete ports while preserving legacy test
-/// control over the link adapter.
+/// Invokes directory add with production filesystem ports.
 #[allow(dead_code)]
 pub fn add_directory(
     ctx: &mut RepoContext,
     abs_dir: &Path,
     dry_run: bool,
-    link: &dyn LinkStrategy,
     ignore: &dyn IgnoreBackend,
 ) -> Result<ops::add::DirectoryAddResult> {
-    let mut materializer = DefaultMaterializer::with_link_strategy(
-        ctx.repo_root.clone(),
-        ctx.config.store.clone(),
-        link,
-    );
+    let mut materializer =
+        DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     let mut transfer =
         DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     ops::add::add_directory(
@@ -82,8 +94,7 @@ pub fn add_directory(
     )
 }
 
-/// Invokes the restore operation with concrete ports while preserving legacy
-/// test control over the link adapter.
+/// Invokes the restore operation with production filesystem ports.
 #[allow(dead_code)]
 pub fn restore(
     ctx: &mut RepoContext,
@@ -91,14 +102,10 @@ pub fn restore(
     dry_run: bool,
     keep_ignore: bool,
     keep_store: bool,
-    link: &dyn LinkStrategy,
     ignore: &dyn IgnoreBackend,
 ) -> Result<ItemRestoreReport> {
-    let mut materializer = DefaultMaterializer::with_link_strategy(
-        ctx.repo_root.clone(),
-        ctx.config.store.clone(),
-        link,
-    );
+    let mut materializer =
+        DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     let mut transfer =
         DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     let mut ports = ops::restore::RestorePorts {
@@ -116,8 +123,7 @@ pub fn restore(
     )
 }
 
-/// Invokes namespace restore with concrete ports while preserving legacy test
-/// control over the link adapter.
+/// Invokes namespace restore with production filesystem ports.
 #[allow(dead_code)]
 pub fn restore_namespace(
     ctx: &mut RepoContext,
@@ -125,14 +131,10 @@ pub fn restore_namespace(
     dry_run: bool,
     keep_ignore: bool,
     keep_store: bool,
-    link: &dyn LinkStrategy,
     ignore: &dyn IgnoreBackend,
 ) -> Result<ops::restore::NamespaceRestoreResult> {
-    let mut materializer = DefaultMaterializer::with_link_strategy(
-        ctx.repo_root.clone(),
-        ctx.config.store.clone(),
-        link,
-    );
+    let mut materializer =
+        DefaultMaterializer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     let mut transfer =
         DefaultCanonicalTransfer::new(ctx.repo_root.clone(), ctx.config.store.clone());
     let mut ports = ops::restore::RestorePorts {
@@ -160,8 +162,7 @@ pub fn init_git_repo() -> TempDir {
     dir
 }
 
-/// Creates a minimal Git repository with one empty commit and returns the temp
-/// dir.
+/// Creates a minimal Git repository with one empty commit and returns the temp dir.
 ///
 /// The empty commit is required by `git worktree add`.
 #[allow(dead_code)]
@@ -174,8 +175,7 @@ pub fn init_git_repo_with_commit() -> TempDir {
 
 /// Initialises a Git repository at an arbitrary existing directory.
 ///
-/// Used when the caller controls the directory lifecycle (e.g. for rename
-/// scenarios where `TempDir` must not manage the path directly).
+/// Used when the caller controls the directory lifecycle (e.g. for rename scenarios where `TempDir` must not manage the path directly).
 #[allow(dead_code)]
 pub fn init_git_repo_at(path: &Path) {
     for args in [
@@ -250,9 +250,7 @@ pub fn require_symlink_support() -> bool {
 
 /// Creates a temporary directory on a filesystem distinct from `reference`.
 ///
-/// The local test suite may not have a second filesystem available. Dedicated
-/// CI sets `SHELFBOX_REQUIRE_CROSS_DEVICE` so that missing `/dev/shm` or a
-/// same-device mount is a test failure rather than a silent skip.
+/// The local test suite may not have a second filesystem available. Dedicated CI sets `SHELFBOX_REQUIRE_CROSS_DEVICE` so that missing `/dev/shm` or a same-device mount is a test failure rather than a silent skip.
 #[cfg(unix)]
 #[allow(dead_code)]
 pub fn tempdir_on_second_filesystem_or_skip(reference: &Path, prefix: &str) -> Option<TempDir> {

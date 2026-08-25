@@ -76,17 +76,13 @@ store
   Crate-private compatibility namespace over storage modules
 
 fs, git
-  Filesystem, Git, ignore-file, and symlink adapters. Every operation performs repository materialization inspection and mutation through `Materializer`.
+  Filesystem, Git, and ignore-file adapters. Every operation performs repository materialization inspection and mutation through `Materializer`; the symlink implementation is private to `fs`.
 
 fs/platform
   Private no-follow, identity, link-count, atomic-replacement, and durability
   capabilities. Unsupported guarantees fail with typed errors; operations do
   not import this module.
 ```
-
-Implementation modules are intentionally crate-private. Tests that need this
-level of access should live inside `shelfbox-core` rather than forcing broad
-public exports.
 
 ## Dependency Direction
 

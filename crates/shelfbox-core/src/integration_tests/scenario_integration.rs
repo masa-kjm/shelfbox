@@ -1,15 +1,13 @@
 /// End-to-end scenario tests covering realistic user workflows.
 ///
-/// These tests exercise multi-step operations that span context lifecycle,
-/// file system changes, and concurrency, verifying that shelfbox behaves
-/// correctly across common real-world sequences.
+/// These tests exercise multi-step operations that span context lifecycle, file system changes, and concurrency, verifying that shelfbox behaves correctly across common real-world sequences.
 ///
 /// See `docs/failure-matrix.md` for the failure modes each scenario targets.
 use std::collections::HashSet;
 
 use tempfile::TempDir;
 
-use shelfbox_core::{context, fs::DefaultLinkStrategy, git::exclude::GitInfoExclude, ops};
+use shelfbox_core::{context, git::exclude::GitInfoExclude, ops};
 
 use crate::integration_test_common as common;
 
@@ -19,8 +17,7 @@ fn require_symlink_support() -> bool {
 
 // ── Scenario 1: re-clone ──────────────────────────────────────────────────────
 
-/// Deleting and re-cloning a repository must assign a *new* ULID while leaving
-/// the original store directory untouched.
+/// Deleting and re-cloning a repository must assign a *new* ULID while leaving the original store directory untouched.
 ///
 /// Failure matrix: #4 (repo moved / re-cloned).
 #[test]
@@ -39,14 +36,7 @@ fn reclone_starts_fresh_while_preserving_old_store() {
         context::build_create_or_load(original_repo.path(), Some(store_dir.path())).unwrap();
     let original_id = ctx.repo_id.clone();
     let original_store = ctx.repo_store.clone();
-    common::add_report(
-        &mut ctx,
-        &secret,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &secret, false, &GitInfoExclude).unwrap();
     drop(ctx);
 
     // Verify the store item exists on disk.
@@ -102,14 +92,7 @@ fn matching_remote_does_not_reclaim_repo_id_automatically() {
     let mut ctx =
         context::build_create_or_load(original_repo.path(), Some(store_dir.path())).unwrap();
     let original_id = ctx.repo_id.clone();
-    common::add_report(
-        &mut ctx,
-        &secret,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &secret, false, &GitInfoExclude).unwrap();
     assert_eq!(
         ctx.manifest.identity_hints.remote_hints,
         vec!["github.com/example/app"]
@@ -151,14 +134,7 @@ fn item_add_updates_identity_hints_without_absolute_paths() {
     std::fs::write(&secret, "sensitive data").unwrap();
 
     let mut ctx = context::build_create_or_load(repo.path(), Some(store_dir.path())).unwrap();
-    common::add_report(
-        &mut ctx,
-        &secret,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &secret, false, &GitInfoExclude).unwrap();
 
     let repo_name = repo
         .path()
@@ -217,14 +193,7 @@ fn repo_rename_creates_new_index_entry_and_preserves_store() {
     let mut ctx = context::build_create_or_load(&api_path, Some(store_dir.path())).unwrap();
     let original_id = ctx.repo_id.clone();
     let original_store = ctx.repo_store.clone();
-    common::add_report(
-        &mut ctx,
-        &secret,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &secret, false, &GitInfoExclude).unwrap();
     drop(ctx);
 
     // Rename the repository directory.
@@ -262,8 +231,7 @@ fn repo_rename_creates_new_index_entry_and_preserves_store() {
 // ── Scenario 3: concurrent adds ───────────────────────────────────────────────
 
 /// Two threads each shelve one file into the same repository concurrently.
-/// The advisory write lock ensures the operations are serialised and both
-/// items appear in the final manifest.
+/// The advisory write lock ensures the operations are serialised and both items appear in the final manifest.
 ///
 /// Failure matrix: #8 (concurrent access).
 #[test]
@@ -280,8 +248,7 @@ fn concurrent_adds_serialize_via_lock() {
     std::fs::write(&file1, "data 1").unwrap();
     std::fs::write(&file2, "data 2").unwrap();
 
-    // Initialize the store once (creates meta.json and index.json) so that
-    // concurrent builds below do not race on first-time store creation.
+    // Initialize the store once (creates meta.json and index.json) so that concurrent builds below do not race on first-time store creation.
     {
         let _ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     }
@@ -293,27 +260,12 @@ fn concurrent_adds_serialize_via_lock() {
 
     let handle = std::thread::spawn(move || {
         let mut ctx = context::build_create_or_load(&repo_path, Some(&store_path)).unwrap();
-        common::add_report(
-            &mut ctx,
-            &file2_path,
-            false,
-            &DefaultLinkStrategy,
-            &GitInfoExclude,
-        )
-        .unwrap();
+        common::add_report(&mut ctx, &file2_path, false, &GitInfoExclude).unwrap();
     });
 
-    // Main thread shelves the first file (may block briefly while the other
-    // thread holds the exclusive lock).
+    // Main thread shelves the first file (may block briefly while the other thread holds the exclusive lock).
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    common::add_report(
-        &mut ctx,
-        &file1,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &file1, false, &GitInfoExclude).unwrap();
     drop(ctx);
 
     handle.join().expect("background thread must not panic");

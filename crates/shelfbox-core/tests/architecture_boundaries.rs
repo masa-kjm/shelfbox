@@ -1,9 +1,6 @@
 //! Source-boundary guard for the copy-mode operation ports.
 //!
-//! D6 lands before existing symlink operations migrate. Their explicitly
-//! enumerated legacy dependencies may shrink but cannot spread to new
-//! production operation modules. New copy-aware operations must use the
-//! `Materializer` and `CanonicalTransfer` ports instead.
+//! D6 lands before existing symlink operations migrate. Their explicitly enumerated legacy dependencies may shrink but cannot spread to new production operation modules. New copy-aware operations must use the `Materializer` and `CanonicalTransfer` ports instead.
 
 use std::{
     fs,
@@ -86,6 +83,32 @@ fn production_operations_cannot_gain_low_level_materialization_dependencies() {
             !restore_plan_source.contains(legacy_dependency),
             "item_restore plan depends on `{legacy_dependency}` instead of receiving Materializer facts"
         );
+    }
+}
+
+#[test]
+fn symlink_adapter_stays_private_to_the_filesystem_layer() {
+    let src_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let fs_dir = src_dir.join("fs");
+    let fs_module =
+        fs::read_to_string(fs_dir.join("mod.rs")).expect("fs module source must be UTF-8");
+
+    assert!(
+        !fs_module.contains("pub(crate) use symlink"),
+        "fs must not re-export symlink implementation types"
+    );
+
+    for (path, source) in rust_sources(&src_dir) {
+        if path.starts_with(&fs_dir) {
+            continue;
+        }
+        let file_name = path.file_name().and_then(|name| name.to_str()).unwrap();
+        for symbol in ["DefaultLinkStrategy", "LinkStrategy"] {
+            assert!(
+                !source.contains(symbol),
+                "{file_name} depends on private symlink adapter `{symbol}`; use Materializer instead"
+            );
+        }
     }
 }
 
