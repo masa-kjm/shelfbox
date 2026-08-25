@@ -10,8 +10,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const LEGACY_LINK_STRATEGY_FILES: &[&str] = &["move_item.rs", "relink.rs"];
-
 const MIGRATED_OPERATION_PORT_FILES: &[&str] = &[
     "add.rs",
     "info.rs",
@@ -35,26 +33,13 @@ const LEGACY_DIRECT_FILESYSTEM_ALLOWLIST: &[(&str, &[&str])] = &[
 fn production_operations_cannot_gain_low_level_materialization_dependencies() {
     let ops_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ops");
     let sources = rust_sources(&ops_dir);
-    let link_strategy_references = sources
-        .iter()
-        .map(|(_, source)| count(source, "LinkStrategy"))
-        .sum::<usize>();
-
-    // The two remaining legacy operations use four references. The ceiling allows migration to reduce the count but prevents new direct imports or uses from entering this transitional branch.
-    assert!(
-        link_strategy_references <= 4,
-        "D6 migration boundary permits at most the remaining four LinkStrategy references; use Materializer instead"
-    );
-
     for (path, source) in &sources {
         let file_name = path.file_name().and_then(|name| name.to_str()).unwrap();
 
-        if source.contains("LinkStrategy") {
-            assert!(
-                LEGACY_LINK_STRATEGY_FILES.contains(&file_name),
-                "{file_name} imports or uses LinkStrategy; production operations must use Materializer"
-            );
-        }
+        assert!(
+            !source.contains("LinkStrategy"),
+            "{file_name} imports or uses LinkStrategy; production operations must use Materializer"
+        );
 
         if MIGRATED_OPERATION_PORT_FILES.contains(&file_name) {
             for legacy_dependency in [
@@ -124,8 +109,4 @@ fn collect_rust_sources(directory: &Path, sources: &mut Vec<(PathBuf, String)>) 
             sources.push((path, source));
         }
     }
-}
-
-fn count(haystack: &str, needle: &str) -> usize {
-    haystack.match_indices(needle).count()
 }

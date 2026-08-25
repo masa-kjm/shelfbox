@@ -194,7 +194,7 @@ fn renamed_repo_store_dir_rebuild_index_restores_locator_and_repair_succeeds() {
         .unwrap();
 
     let mut ctx = context::build_create_or_load(repo.path(), Some(store.path())).unwrap();
-    let repair = ops::repair::repair_repo(&mut ctx, &DefaultLinkStrategy, false, false).unwrap();
+    let repair = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(repair.symlinks_repaired, 1);
     assert!(repair.exclude_updated);
@@ -299,7 +299,7 @@ fn repair_after_reclaim_restores_symlinks_and_exclude_entries() {
     ops::reclaim::execute_reclaim(store.path(), &current, &repo_id).unwrap();
 
     let mut ctx = context::build_create_or_load(reclone.path(), Some(store.path())).unwrap();
-    let repair = ops::repair::repair_repo(&mut ctx, &DefaultLinkStrategy, false, false).unwrap();
+    let repair = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     let repaired_path = reclone.path().join("secret.env");
 
     assert_eq!(repair.symlinks_repaired, 1);

@@ -446,7 +446,7 @@ fn fix_symlinks(
 ) {
     for item in &ctx.manifest.items {
         let abs_path = ctx.repo_root.join(&item.path);
-        match repair::repair_report(ctx, &abs_path, &(), dry_run, false).map(|r| r.outcome) {
+        match repair::repair_report(ctx, &abs_path, dry_run, false).map(|r| r.outcome) {
             Ok(RepairOutcome::AlreadyHealthy) => {
                 // Healthy items are not listed to keep output concise.
             }

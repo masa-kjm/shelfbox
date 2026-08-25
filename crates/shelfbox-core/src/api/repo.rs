@@ -35,7 +35,7 @@ use crate::{
     config::Config,
     context,
     error::Result,
-    fs::{materializer::DefaultMaterializer, DefaultLinkStrategy},
+    fs::materializer::DefaultMaterializer,
     git::exclude::GitInfoExclude,
     ops::{detect_transitions, integrity, reclaim, repair, repo_materialize, repo_sync},
     store::{index, manifest},
@@ -121,8 +121,7 @@ pub fn scan_transitions(ctx: &RepoContext, config: &Config) -> Result<Transition
 }
 
 pub fn repair_repo(ctx: &mut RepoContext, dry_run: bool, force: bool) -> Result<RepairRepoReport> {
-    let link = DefaultLinkStrategy;
-    repair::repair_repo(ctx, &link, dry_run, force)
+    repair::repair_repo(ctx, dry_run, force)
 }
 
 /// Synchronizes every attached item after validating the complete batch.

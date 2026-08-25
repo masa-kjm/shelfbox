@@ -18,7 +18,6 @@ use crate::{
     },
     error::{AppError, Result},
     failpoint::{self, Failpoint},
-    fs::LinkStrategy,
     fs::{
         canonical_transfer::{
             CanonicalEntryKind, CanonicalInspectionPurpose, CanonicalTransfer,
@@ -62,7 +61,6 @@ pub(crate) fn relink_report(
     ctx: &mut RepoContext,
     abs_path: &Path,
     dry_run: bool,
-    _link: &dyn LinkStrategy,
 ) -> Result<ItemRelinkReport> {
     relink_report_with_request(
         ctx,

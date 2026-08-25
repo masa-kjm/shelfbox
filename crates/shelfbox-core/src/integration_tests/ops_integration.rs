@@ -2195,7 +2195,7 @@ fn relink_dry_run_makes_no_changes() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let outcome = ops::relink::relink_report(&mut ctx, &file_path, true, &link).unwrap();
+    let outcome = ops::relink::relink_report(&mut ctx, &file_path, true).unwrap();
 
     assert_eq!(outcome.outcome, ops::relink::RelinkOutcome::WouldRelink);
     assert_eq!(
@@ -2340,7 +2340,7 @@ fn directionless_relink_materialization_failpoint_is_retryable() {
         Ok(())
     });
     assert!(matches!(
-        ops::relink::relink_report(&mut ctx, &file_path, false, &link),
+        ops::relink::relink_report(&mut ctx, &file_path, false),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -2350,7 +2350,7 @@ fn directionless_relink_materialization_failpoint_is_retryable() {
         ctx.manifest.items[0].ownership_state,
         store::manifest::OwnershipState::Detached
     );
-    let retry = ops::relink::relink_report(&mut ctx, &file_path, false, &link).unwrap();
+    let retry = ops::relink::relink_report(&mut ctx, &file_path, false).unwrap();
     assert_eq!(retry.outcome, ops::relink::RelinkOutcome::StateUpdated);
     assert_eq!(
         ctx.manifest.items[0].ownership_state,
@@ -2571,7 +2571,7 @@ fn repair_recreates_missing_symlink() {
     std::fs::remove_dir(&parent).unwrap();
     assert!(!file_path.exists(), "symlink must be gone before repair");
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::LinkRecreated);
 
     // Symlink must be back and readable.
@@ -2613,7 +2613,7 @@ fn repair_rejects_wrong_target_symlink_without_force() {
     );
 
     // Without --force, repair must refuse.
-    let result = ops::repair::repair_report(&ctx, &file_path, &link, false, false);
+    let result = ops::repair::repair_report(&ctx, &file_path, false, false);
     assert!(
         matches!(
             result,
@@ -2653,7 +2653,7 @@ fn repair_force_relinks_wrong_target_symlink() {
     let bogus_target = repo_dir.path().join("missing-target-for-repair-test-2");
     common::create_file_symlink(&bogus_target, &file_path);
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, true).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, false, true).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::LinkRecreated);
 
     assert!(link.is_managed_link(&file_path, &ctx.config.store));
@@ -2677,7 +2677,7 @@ fn repair_already_healthy_returns_no_op() {
 
     common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::AlreadyHealthy);
 }
 
@@ -2702,7 +2702,7 @@ fn repair_returns_store_missing_when_store_item_gone() {
     let store_item = ctx.repo_store.join("items/secrets.txt");
     std::fs::remove_file(&store_item).unwrap();
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::StoreMissing);
 
     // The (now dangling) symlink must be left untouched.
@@ -2724,9 +2724,8 @@ fn repair_returns_not_managed_for_unknown_path() {
     std::fs::write(&unmanaged, "not shelved").unwrap();
 
     let ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
 
-    let outcome = ops::repair::repair_report(&ctx, &unmanaged, &link, false, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &unmanaged, false, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::NotManaged);
 }
 
@@ -2759,7 +2758,7 @@ fn repair_leaves_diverged_regular_file_unchanged() {
         "must be a regular file before the safety check"
     );
 
-    let result = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let result = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(result.outcome, ops::repair::RepairOutcome::CopyDiverged);
 
     // The user's file must be intact.
@@ -2789,7 +2788,7 @@ fn repair_dry_run_makes_no_changes() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, true, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, true, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::LinkRecreated);
 
     // Symlink must NOT have been recreated in dry-run mode.
@@ -2817,7 +2816,7 @@ fn item_repair_refuses_a_missing_target_exclude_without_writing() {
         .unwrap();
 
     assert!(matches!(
-        ops::repair::repair_report(&ctx, &file_path, &link, false, false),
+        ops::repair::repair_report(&ctx, &file_path, false, false),
         Err(AppError::Internal(message)) if message.contains("exclude is missing")
     ));
     assert!(file_path.symlink_metadata().is_err());
@@ -2848,7 +2847,7 @@ fn item_repair_copy_recreates_only_a_missing_materialization() {
     std::fs::remove_dir(&parent).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    let report = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let report = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(report.outcome, ops::repair::RepairOutcome::LinkRecreated);
     assert!(!file_path
         .symlink_metadata()
@@ -2878,7 +2877,7 @@ fn item_repair_force_leaves_diverged_regular_content_unchanged() {
     std::fs::write(&file_path, "user content").unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    let report = ops::repair::repair_report(&ctx, &file_path, &link, false, true).unwrap();
+    let report = ops::repair::repair_report(&ctx, &file_path, false, true).unwrap();
     assert_eq!(report.outcome, ops::repair::RepairOutcome::CopyDiverged);
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "user content");
 }
@@ -2918,7 +2917,7 @@ fn repo_repair_writes_target_exclude_before_copy_temp_creation() {
         Ok(())
     });
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     drop(hook);
     assert!(observed.get());
     assert_eq!(
@@ -2949,7 +2948,7 @@ fn repo_repair_detached_missing_origin_preserves_but_does_not_add_exclude() {
 
     // A detached item whose origin still has an index entry is included in
     // repo repair's desired exclude set, while its materialization stays off.
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert!(ignore
         .has_entry(repo_dir.path(), "detached-repair.txt")
         .unwrap());
@@ -2960,7 +2959,7 @@ fn repo_repair_detached_missing_origin_preserves_but_does_not_add_exclude() {
         .remove_entries(repo_dir.path(), &["detached-repair.txt"])
         .unwrap();
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert!(!ignore
         .has_entry(repo_dir.path(), "detached-repair.txt")
         .unwrap());
@@ -2968,7 +2967,7 @@ fn repo_repair_detached_missing_origin_preserves_but_does_not_add_exclude() {
     ignore
         .add_entries(repo_dir.path(), &["detached-repair.txt"])
         .unwrap();
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert!(ignore
         .has_entry(repo_dir.path(), "detached-repair.txt")
         .unwrap());
@@ -2996,7 +2995,7 @@ fn repo_repair_inspection_failure_does_not_rewrite_excludes() {
     let exclude_path = crate::git::exclude::exclude_file_path(repo_dir.path()).unwrap();
     let exclude_before = std::fs::read_to_string(&exclude_path).unwrap();
 
-    assert!(ops::repair::repair_repo(&mut ctx, &link, false, false).is_err());
+    assert!(ops::repair::repair_repo(&mut ctx, false, false).is_err());
     assert_eq!(
         std::fs::read_to_string(exclude_path).unwrap(),
         exclude_before
@@ -3023,7 +3022,7 @@ fn repo_repair_leaves_diverged_regular_content_unchanged() {
     std::fs::write(&file_path, "user content").unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, true).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, true).unwrap();
     assert!(report.symlinks_failed.is_empty());
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "user content");
 }
@@ -3047,7 +3046,7 @@ fn repo_repair_is_idempotent_for_mixed_symlink_and_copy_materializations() {
     std::fs::remove_file(&copy_path).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert!(link.is_managed_link(&link_path, &ctx.config.store));
     assert!(!copy_path
         .symlink_metadata()
@@ -3057,7 +3056,7 @@ fn repo_repair_is_idempotent_for_mixed_symlink_and_copy_materializations() {
     let repo_after_first = common::snapshot_tree(repo_dir.path());
     let store_after_first = common::snapshot_tree(store_dir.path());
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert_eq!(common::snapshot_tree(repo_dir.path()), repo_after_first);
     assert_eq!(common::snapshot_tree(store_dir.path()), store_after_first);
 }
@@ -3081,7 +3080,7 @@ fn repo_repair_refuses_malformed_managed_exclude_without_writing() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    assert!(ops::repair::repair_repo(&mut ctx, &link, false, false).is_err());
+    assert!(ops::repair::repair_repo(&mut ctx, false, false).is_err());
     assert_eq!(std::fs::read_to_string(&exclude_path).unwrap(), malformed);
     assert_eq!(common::snapshot_tree(repo_dir.path()), repo_before);
     assert_eq!(common::snapshot_tree(store_dir.path()), store_before);
@@ -3115,7 +3114,7 @@ fn interrupted_copy_repo_repair_is_cleaned_and_retryable() {
         }
         Ok(())
     });
-    let interrupted = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let interrupted = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert_eq!(interrupted.symlinks_failed.len(), 1);
     assert!(!operation_record_store::load_all(store_dir.path())
         .unwrap()
@@ -3129,7 +3128,7 @@ fn interrupted_copy_repo_repair_is_cleaned_and_retryable() {
         .unwrap()
         .is_empty());
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "retry repair");
-    ops::repair::repair_repo(&mut recovered, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut recovered, false, false).unwrap();
 }
 
 #[test]
@@ -3158,7 +3157,7 @@ fn interrupted_repo_repair_after_target_exclude_update_is_retryable() {
     });
 
     assert!(matches!(
-        ops::repair::repair_repo(&mut ctx, &link, false, false),
+        ops::repair::repair_repo(&mut ctx, false, false),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -3169,7 +3168,7 @@ fn interrupted_repo_repair_after_target_exclude_update_is_retryable() {
         .unwrap()
         .is_empty());
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert_eq!(
         std::fs::read_to_string(&file_path).unwrap(),
         "retry exclude"
@@ -3200,7 +3199,7 @@ fn copy_repo_repair_dry_run_creates_no_records_or_files() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, true, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, true, false).unwrap();
     assert!(matches!(
         report.plan.symlink_actions.as_slice(),
         [RepoRepairSymlinkAction::CreateCopy { path, .. }] if path == "nested/dry-copy-repair.txt"
@@ -3232,7 +3231,7 @@ fn repo_repair_recreates_broken_symlinks() {
     std::fs::remove_file(&file_path).unwrap();
     assert!(file_path.symlink_metadata().is_err());
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 1);
     assert_eq!(report.symlinks_already_healthy, 0);
@@ -3261,7 +3260,7 @@ fn repo_repair_recreates_symlink_when_parent_directory_is_missing() {
     std::fs::remove_file(&file_path).unwrap();
     std::fs::remove_dir(&parent).unwrap();
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 1);
     assert!(report.symlinks_failed.is_empty());
@@ -3291,7 +3290,7 @@ fn repo_repair_recreates_copy_when_parent_directory_is_missing() {
     std::fs::remove_file(&file_path).unwrap();
     std::fs::remove_dir(&parent).unwrap();
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 1);
     assert!(report.symlinks_failed.is_empty());
@@ -3341,7 +3340,7 @@ fn repo_repair_failure_after_parent_creation_keeps_created_parents() {
         Ok(())
     });
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     drop(hook);
 
     assert_eq!(report.symlinks_repaired, 0);
@@ -3383,7 +3382,7 @@ fn repo_repair_reports_healthy_symlinks_without_relinking() {
     common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
 
     let target_before = link.read_target(&file_path).unwrap();
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     let target_after = link.read_target(&file_path).unwrap();
 
     assert_eq!(report.symlinks_repaired, 0);
@@ -3409,7 +3408,7 @@ fn repo_repair_reports_missing_store_file_as_nonfatal_failure() {
     common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
     std::fs::remove_file(ctx.repo_store.join("items/lost-repo.txt")).unwrap();
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 0);
     assert_eq!(report.symlinks_already_healthy, 0);
@@ -3454,7 +3453,7 @@ fn repo_repair_updates_index_and_identity_hints() {
     idx.upsert(&ctx.repo_id, entry);
     store::index::save(store_dir.path(), &idx).unwrap();
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     let current = context::current_git_context(repo_dir.path()).unwrap();
     let idx = store::index::load(store_dir.path()).unwrap();
     let entry = idx.get(&ctx.repo_id).unwrap();
@@ -3495,7 +3494,7 @@ fn repo_repair_requires_existing_repoid_without_creating_one() {
     assert!(idx.remove(&ctx.repo_id));
     store::index::save(store_dir.path(), &idx).unwrap();
 
-    let result = ops::repair::repair_repo(&mut ctx, &link, false, false);
+    let result = ops::repair::repair_repo(&mut ctx, false, false);
     let idx_after = store::index::load(store_dir.path()).unwrap();
 
     assert!(result.is_err());
@@ -3547,7 +3546,7 @@ fn repo_repair_dry_run_makes_no_file_writes() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, true, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, true, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 1);
     assert!(report.exclude_updated);
@@ -4196,7 +4195,7 @@ fn move_item_renames_store_and_updates_symlink() {
 
     // Move to a subdirectory to also test parent directory creation.
     let new_path = repo_dir.path().join("subdir/new.txt");
-    ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &link, &ignore).unwrap();
+    ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &ignore).unwrap();
 
     // Old symlink must be gone.
     assert!(!old_path.exists(), "old symlink must be removed");
@@ -4263,7 +4262,7 @@ fn move_preserves_an_observed_equal_regular_copy() {
     std::fs::remove_file(&old_path).unwrap();
     std::fs::copy(&old_store, &old_path).unwrap();
 
-    ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &link, &ignore).unwrap();
+    ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &ignore).unwrap();
 
     assert!(!new_path
         .symlink_metadata()
@@ -4298,9 +4297,7 @@ fn move_recovery_completes_after_canonical_transfer() {
         }
         Ok(())
     });
-    assert!(
-        ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &link, &ignore).is_err()
-    );
+    assert!(ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &ignore).is_err());
     drop(hook);
     drop(ctx);
 
@@ -4334,8 +4331,8 @@ fn move_item_rejects_when_destination_exists() {
 
     common::add_report(&mut ctx, &old_path, false, &link, &ignore).unwrap();
 
-    let err = ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &link, &ignore)
-        .unwrap_err();
+    let err =
+        ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &ignore).unwrap_err();
     assert!(
         matches!(
             err,
@@ -4370,8 +4367,7 @@ fn move_item_rejects_when_new_path_already_managed() {
     common::add_report(&mut ctx, &file_b, false, &link, &ignore).unwrap();
 
     // Attempt to move a.txt → b.txt where b.txt is already managed.
-    let err =
-        ops::move_item::move_item(&mut ctx, &file_a, &file_b, false, &link, &ignore).unwrap_err();
+    let err = ops::move_item::move_item(&mut ctx, &file_a, &file_b, false, &ignore).unwrap_err();
     assert!(
         matches!(err, shelfbox_core::error::AppError::AlreadyManaged { .. }),
         "expected AlreadyManaged, got: {err}"
@@ -4405,8 +4401,8 @@ fn move_item_rejects_when_symlink_mismatch() {
     common::create_file_symlink(&bogus_target, &file_path);
 
     let new_path = repo_dir.path().join("secret_renamed.txt");
-    let err = ops::move_item::move_item(&mut ctx, &file_path, &new_path, false, &link, &ignore)
-        .unwrap_err();
+    let err =
+        ops::move_item::move_item(&mut ctx, &file_path, &new_path, false, &ignore).unwrap_err();
     assert!(
         matches!(
             err,
@@ -4439,8 +4435,7 @@ fn move_item_dry_run_makes_no_changes() {
     let new_path = repo_dir.path().join("renamed.txt");
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
-    let report =
-        ops::move_item::move_item(&mut ctx, &old_path, &new_path, true, &link, &ignore).unwrap();
+    let report = ops::move_item::move_item(&mut ctx, &old_path, &new_path, true, &ignore).unwrap();
     assert!(report.dry_run);
     assert!(report.warnings.is_empty());
     assert_eq!(report.plan.old_path, "original.txt");

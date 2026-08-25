@@ -36,10 +36,7 @@ pub use crate::{
 use crate::{
     context,
     error::Result,
-    fs::{
-        canonical_transfer::DefaultCanonicalTransfer, materializer::DefaultMaterializer,
-        DefaultLinkStrategy,
-    },
+    fs::{canonical_transfer::DefaultCanonicalTransfer, materializer::DefaultMaterializer},
     git::exclude::{GitInfoExclude, GitInfoExcludeSession},
     ops::{
         add, info as info_ops, list as list_ops, materialize as materialize_ops,
@@ -270,8 +267,7 @@ pub fn repair(
     dry_run: bool,
     force: bool,
 ) -> Result<ItemRepairReport> {
-    let link = DefaultLinkStrategy;
-    repair_ops::repair_report(ctx, abs_path, &link, dry_run, force)
+    repair_ops::repair_report(ctx, abs_path, dry_run, force)
 }
 
 /// Explicitly converts one existing healthy materialization to `strategy`.
@@ -298,8 +294,7 @@ pub fn sync(
 }
 
 pub fn relink(ctx: &mut RepoContext, abs_path: &Path, dry_run: bool) -> Result<ItemRelinkReport> {
-    let link = DefaultLinkStrategy;
-    relink_ops::relink_report(ctx, abs_path, dry_run, &link)
+    relink_ops::relink_report(ctx, abs_path, dry_run)
 }
 
 /// Re-attaches a detached item, optionally resolving a diverged regular Copy
@@ -319,9 +314,8 @@ pub fn move_item(
     new_abs: &Path,
     dry_run: bool,
 ) -> Result<ItemMoveReport> {
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    move_item_ops::move_item(ctx, old_abs, new_abs, dry_run, &link, &ignore)
+    move_item_ops::move_item(ctx, old_abs, new_abs, dry_run, &ignore)
 }
 
 pub fn info(ctx: &RepoContext, abs_path: &Path) -> Result<ItemInfo> {

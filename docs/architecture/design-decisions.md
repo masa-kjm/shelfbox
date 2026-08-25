@@ -510,14 +510,7 @@ Git/exclude state including artifact leases, and planned destination equality.
 
 ### Dependency enforcement
 
-`crates/shelfbox-core/tests/architecture_boundaries.rs` is active before the first copy-aware operation migration. It rejects production `ops/` references to platform modules, secure transfer, symlink helpers, and platform-specific symlink APIs. It also prevents `LinkStrategy` and direct copy/rename/removal/ read-link calls from spreading beyond the current symlink-only modules.
-
-The two remaining existing legacy modules are `move_item` and `relink`.
-Their total `LinkStrategy` references may decrease from the recorded ceiling of four but may not increase or appear in a new production operation module.
-Their narrowly enumerated direct filesystem calls are likewise allowlisted only in the existing operation files.
-Each Phase 3 operation migration must remove its legacy allowance; no copy-aware operation may use one.
-`add`, `restore`, `status`, `integrity`, and `info` now receive `Materializer` or `CanonicalTransfer` ports, and the source guard rejects their direct use of legacy link strategies or default adapters.
-This preserves existing symlink behavior while making the dependency boundary enforceable now.
+`crates/shelfbox-core/tests/architecture_boundaries.rs` is active before the first copy-aware operation migration. It rejects production `ops/` references to platform modules, secure transfer, symlink helpers, and platform-specific symlink APIs.
 
 ### Prototype tests
 
