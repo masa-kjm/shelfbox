@@ -35,7 +35,7 @@ use crate::{
     config::Config,
     context,
     error::Result,
-    fs::DefaultLinkStrategy,
+    fs::materializer::DefaultMaterializer,
     git::exclude::GitInfoExclude,
     ops::{detect_transitions, integrity, reclaim, repair, repo_materialize, repo_sync},
     store::{index, manifest},
@@ -105,15 +105,15 @@ pub fn build_explicit_reclaim(
 }
 
 pub fn integrity_check(ctx: &RepoContext) -> Result<IntegrityReport> {
-    let link = DefaultLinkStrategy;
+    let materializer = DefaultMaterializer::new(ctx.repo_root.clone(), ctx.repo_store.clone());
     let ignore = GitInfoExclude;
-    integrity::check(ctx, &link, &ignore)
+    integrity::check(ctx, &materializer, &ignore)
 }
 
 pub fn integrity_check_v2(ctx: &RepoContext, options: StatusOptions) -> Result<IntegrityReportV2> {
-    let link = DefaultLinkStrategy;
+    let materializer = DefaultMaterializer::new(ctx.repo_root.clone(), ctx.repo_store.clone());
     let ignore = GitInfoExclude;
-    integrity::check_v2(ctx, &link, &ignore, options)
+    integrity::check_v2(ctx, &materializer, &ignore, options)
 }
 
 pub fn scan_transitions(ctx: &RepoContext, config: &Config) -> Result<TransitionReport> {
@@ -121,8 +121,7 @@ pub fn scan_transitions(ctx: &RepoContext, config: &Config) -> Result<Transition
 }
 
 pub fn repair_repo(ctx: &mut RepoContext, dry_run: bool, force: bool) -> Result<RepairRepoReport> {
-    let link = DefaultLinkStrategy;
-    repair::repair_repo(ctx, &link, dry_run, force)
+    repair::repair_repo(ctx, dry_run, force)
 }
 
 /// Synchronizes every attached item after validating the complete batch.

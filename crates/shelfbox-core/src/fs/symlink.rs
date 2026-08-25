@@ -6,74 +6,45 @@ use crate::error::{AppError, Result};
 
 /// Abstraction over different link mechanisms.
 ///
-/// Concrete implementations: `UnixSymlinkStrategy` (Linux / macOS) and
-/// `WindowsSymlinkStrategy` (Windows). Call-sites should use
-/// [`DefaultLinkStrategy`] to stay platform-agnostic.
-pub trait LinkStrategy {
+/// Concrete implementations are `UnixSymlinkStrategy` (Linux / macOS) and `WindowsSymlinkStrategy` (Windows).
+/// The materializer uses [`DefaultLinkStrategy`] to stay platform-agnostic.
+pub(super) trait LinkStrategy {
     /// Creates a link at `link_path` that points to `target`.
     ///
-    /// `link_path` must not already exist; the caller is responsible for
-    /// checking beforehand.
+    /// `link_path` must not already exist; the caller is responsible for checking beforehand.
     fn create(&self, target: &Path, link_path: &Path) -> Result<()>;
 
     /// Removes the link at `link_path`.
     ///
     /// Only the link itself is removed; the target is not touched.
-    #[allow(dead_code)] // retained for compatibility with injected legacy strategies
+    #[allow(dead_code)] // retained for internal symlink adapter tests
     fn remove(&self, link_path: &Path) -> Result<()>;
 
     /// Returns `true` if `link_path` is a link managed by shelfbox.
     ///
-    /// "Managed" means: it is a link of the expected kind whose target
-    /// falls inside `store_root`.
-    #[allow(dead_code)] // status/legacy strategy surface; lifecycle uses Materializer facts
+    /// "Managed" means: it is a link of the expected kind whose target falls inside `store_root`.
+    #[allow(dead_code)] // retained for internal symlink adapter tests
     fn is_managed_link(&self, link_path: &Path, store_root: &Path) -> bool;
 
-    /// Returns `true` if `path` is a link of the kind this strategy manages
-    /// (i.e. a symlink on both Unix and Windows).
+    /// Returns `true` if `path` is a link of the kind this strategy manages (i.e. a symlink on both Unix and Windows).
     ///
-    /// Unlike [`Self::is_managed_link`], this does **not** verify that the target
-    /// falls inside the shelfbox store.
-    #[allow(dead_code)] // retained as a platform-neutral public link probe
+    /// Unlike [`Self::is_managed_link`], this does **not** verify that the target falls inside the shelfbox store.
+    #[allow(dead_code)] // retained for internal symlink adapter tests
     fn is_link(&self, path: &Path) -> bool;
 
     /// Returns the immediate target of the link at `path`.
     ///
-    /// Analogous to [`std::fs::read_link`] but routed through the strategy
-    /// so that platform-specific quirks are handled in one place.
+    /// Analogous to [`std::fs::read_link`] but routed through the strategy so that platform-specific quirks are handled in one place.
     fn read_target(&self, path: &Path) -> Result<std::path::PathBuf>;
-}
-
-impl<T: LinkStrategy + ?Sized> LinkStrategy for &T {
-    fn create(&self, target: &Path, link_path: &Path) -> Result<()> {
-        (*self).create(target, link_path)
-    }
-
-    fn remove(&self, link_path: &Path) -> Result<()> {
-        (*self).remove(link_path)
-    }
-
-    fn is_managed_link(&self, link_path: &Path, store_root: &Path) -> bool {
-        (*self).is_managed_link(link_path, store_root)
-    }
-
-    fn is_link(&self, path: &Path) -> bool {
-        (*self).is_link(path)
-    }
-
-    fn read_target(&self, path: &Path) -> Result<std::path::PathBuf> {
-        (*self).read_target(path)
-    }
 }
 
 // ── UnixSymlinkStrategy ───────────────────────────────────────────────────────
 
 /// [`LinkStrategy`] that uses Unix symbolic links.
 ///
-/// Supported on Linux and macOS. Prefer [`DefaultLinkStrategy`] at call-sites
-/// to remain platform-agnostic.
+/// Supported on Linux and macOS.
 #[cfg(unix)]
-pub struct UnixSymlinkStrategy;
+struct UnixSymlinkStrategy;
 
 #[cfg(unix)]
 impl LinkStrategy for UnixSymlinkStrategy {
@@ -134,11 +105,9 @@ impl LinkStrategy for UnixSymlinkStrategy {
 
 /// [`LinkStrategy`] that uses Windows symbolic links.
 ///
-/// Requires Developer Mode or an elevated shell. Prefer [`DefaultLinkStrategy`]
-/// at call-sites to remain platform-agnostic. Full implementation is provided
-/// in T3.
+/// Requires Developer Mode or an elevated shell. Full implementation is provided in T3.
 #[cfg(windows)]
-pub struct WindowsSymlinkStrategy;
+struct WindowsSymlinkStrategy;
 
 #[cfg(windows)]
 impl LinkStrategy for WindowsSymlinkStrategy {
@@ -149,10 +118,7 @@ impl LinkStrategy for WindowsSymlinkStrategy {
             std::fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
         }
 
-        // Windows symlink API requires knowing whether the target is a
-        // directory at creation time. shelfbox supports directory shelving,
-        // so this branch must be retained for future compatibility even
-        // if the current MVP primarily handles files.
+        // Windows symlink API requires knowing whether the target is a directory at creation time. shelfbox supports directory shelving, so this branch must be retained for future compatibility even if the current MVP primarily handles files.
         let result = if target.is_dir() {
             fs::symlink_dir(target, link_path)
         } else {
@@ -160,8 +126,7 @@ impl LinkStrategy for WindowsSymlinkStrategy {
         };
 
         result.map_err(|e| {
-            // Windows error 1314 (ERROR_PRIVILEGE_NOT_HELD): symlink creation
-            // requires Developer Mode or an elevated shell.
+            // Windows error 1314 (ERROR_PRIVILEGE_NOT_HELD): symlink creation requires Developer Mode or an elevated shell.
             if e.raw_os_error() == Some(1314) {
                 AppError::Internal(
                     "Windows symlink creation is unavailable.\n\
@@ -222,11 +187,9 @@ impl LinkStrategy for WindowsSymlinkStrategy {
 
 // ── DefaultLinkStrategy ───────────────────────────────────────────────────────
 
-/// Platform-appropriate link strategy selected at compile time.
-///
-/// Use this type at all call-sites. All `#[cfg]` dispatch is contained
-/// inside this implementation; binary call-sites stay `#[cfg]`-free.
-pub struct DefaultLinkStrategy;
+/// Platform-appropriate link strategy selected at compile time for the materializer.
+/// All `#[cfg]` dispatch is contained in this implementation.
+pub(super) struct DefaultLinkStrategy;
 
 impl LinkStrategy for DefaultLinkStrategy {
     fn create(&self, target: &Path, link_path: &Path) -> Result<()> {

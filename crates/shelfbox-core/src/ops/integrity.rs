@@ -7,8 +7,8 @@ use serde::Serialize;
 
 use super::status::{self, ItemStatus, ItemStatusV2, StatusOptions};
 use crate::{
-    context::RepoContext, error::Result, fs::LinkStrategy, git::exclude::IgnoreBackend,
-    store::index,
+    context::RepoContext, error::Result, fs::materializer::Materializer,
+    git::exclude::IgnoreBackend, store::index,
 };
 
 #[cfg(test)]
@@ -44,10 +44,10 @@ pub struct IntegrityReportV2 {
 /// Runs all health checks and returns an [`IntegrityReport`].
 pub fn check(
     ctx: &RepoContext,
-    link: &dyn LinkStrategy,
+    materializer: &dyn Materializer,
     ignore: &dyn IgnoreBackend,
 ) -> Result<IntegrityReport> {
-    let items = status::status(ctx, link, ignore)?;
+    let items = status::status(ctx, materializer, ignore)?;
     let orphan_store_items = collect_orphan_store_items(ctx);
     let repo_root_matches_index = check_repo_root_in_index(ctx)?;
     Ok(IntegrityReport {
@@ -60,11 +60,11 @@ pub fn check(
 /// Runs all health checks and returns a schema-v2 [`IntegrityReportV2`].
 pub fn check_v2(
     ctx: &RepoContext,
-    link: &dyn LinkStrategy,
+    materializer: &dyn Materializer,
     ignore: &dyn IgnoreBackend,
     options: StatusOptions,
 ) -> Result<IntegrityReportV2> {
-    let items = status::status_v2(ctx, link, ignore, options)?;
+    let items = status::status_v2(ctx, materializer, ignore, options)?;
     let orphan_store_items = collect_orphan_store_items(ctx);
     let repo_root_matches_index = check_repo_root_in_index(ctx)?;
     Ok(IntegrityReportV2 {
@@ -209,7 +209,6 @@ pub struct IntegrityFixReport {
 #[cfg(test)]
 pub fn fix(
     ctx: &mut RepoContext,
-    link: &dyn LinkStrategy,
     ignore: &dyn IgnoreBackend,
     yes: bool,
     dry_run: bool,
@@ -226,7 +225,7 @@ pub fn fix(
     fix_root_mismatch(ctx, &mut actions, dry_run)?;
     rebuild_manifest_from_store(ctx, &mut actions, yes, dry_run)?;
     fix_exclude_entries(ctx, ignore, &mut actions, dry_run)?;
-    fix_symlinks(ctx, link, &mut actions, &mut data_loss_warnings, dry_run);
+    fix_symlinks(ctx, &mut actions, &mut data_loss_warnings, dry_run);
     handle_orphans(ctx, yes, &mut actions, dry_run);
 
     Ok(IntegrityFixReport {
@@ -441,14 +440,13 @@ fn fix_exclude_entries(
 #[cfg(test)]
 fn fix_symlinks(
     ctx: &RepoContext,
-    link: &dyn LinkStrategy,
     actions: &mut Vec<FixResult>,
     data_loss_warnings: &mut Vec<String>,
     dry_run: bool,
 ) {
     for item in &ctx.manifest.items {
         let abs_path = ctx.repo_root.join(&item.path);
-        match repair::repair_report(ctx, &abs_path, link, dry_run, false).map(|r| r.outcome) {
+        match repair::repair_report(ctx, &abs_path, dry_run, false).map(|r| r.outcome) {
             Ok(RepairOutcome::AlreadyHealthy) => {
                 // Healthy items are not listed to keep output concise.
             }

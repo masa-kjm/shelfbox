@@ -1,8 +1,6 @@
 //! Operation-facing materialization port.
 //!
-//! The concrete adapter composes `LinkStrategy`, secure transfer, and platform
-//! capabilities. The operation layer may use the types and traits here, but
-//! cannot inspect the opaque handles or snapshots that carry filesystem details.
+//! The concrete adapter composes `LinkStrategy`, secure transfer, and platform capabilities. The operation layer may use the types and traits here, but cannot inspect the opaque handles or snapshots that carry filesystem details.
 
 use std::{
     fmt,
@@ -18,14 +16,13 @@ use crate::{
     error::{AppError, Result},
     failpoint::{self, Failpoint},
     fs::{platform, secure_transfer},
-    fs::{DefaultLinkStrategy, LinkStrategy},
 };
+
+use super::symlink::{DefaultLinkStrategy, LinkStrategy};
 
 /// Logical endpoints of a repo materialization.
 ///
-/// These are normalized relative paths. The materializer, which is configured
-/// with repository and store roots in the composition root, resolves them to
-/// absolute paths internally.
+/// These are normalized relative paths. The materializer, which is configured with repository and store roots in the composition root, resolves them to absolute paths internally.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MaterializationLocation {
     pub repo_path: RepoRelativePath,
@@ -43,8 +40,7 @@ impl MaterializationLocation {
 
 /// High-level kind observed at a repo materialization path.
 ///
-/// This is deliberately distinct from the platform adapter's entry kind. It
-/// contains only policy-relevant facts and never exposes a raw file identity.
+/// This is deliberately distinct from the platform adapter's entry kind. It contains only policy-relevant facts and never exposes a raw file identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RepoEntryKind {
     Missing,
@@ -64,9 +60,7 @@ pub(crate) enum FinalComponentInspection {
 
 /// Opaque expected state for a destructive materialization action.
 ///
-/// Operations can see the expected entry kind for policy/reporting, but only
-/// the materializer can read the identity snapshot used to prove it still
-/// refers to the same filesystem entry at commit time.
+/// Operations can see the expected entry kind for policy/reporting, but only the materializer can read the identity snapshot used to prove it still refers to the same filesystem entry at commit time.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ExpectedMaterialization {
     pub repo_entry_kind: RepoEntryKind,
@@ -86,8 +80,7 @@ impl fmt::Debug for ExpectedMaterialization {
 /// Read-only facts returned by [`Materializer::inspect`].
 ///
 /// `link_count` and `hardlink_free` are derived from no-follow handle facts.
-/// The backing identity is deliberately not exposed; call [`Self::expected`]
-/// to carry it forward into a typed mutation action.
+/// The backing identity is deliberately not exposed; call [`Self::expected`] to carry it forward into a typed mutation action.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct MaterializationFacts {
     pub repo_entry_kind: RepoEntryKind,
@@ -98,6 +91,10 @@ pub(crate) struct MaterializationFacts {
     pub store_regular: bool,
     pub store_hardlink_free: bool,
     pub copy_content: CopyContentState,
+    /// Immediate target reported by the repository-side symlink/reparse point.
+    ///
+    /// This preserves the target spelling for diagnostics. Operations may report it, but must not use it to choose a mutation destination.
+    pub symlink_target: Option<PathBuf>,
     /// Absolute resolved target for an unmanaged symlink/reparse point.
     /// Operations may report it, but never use it to perform replacement.
     pub unmanaged_symlink_target: Option<PathBuf>,
@@ -116,6 +113,7 @@ impl fmt::Debug for MaterializationFacts {
             .field("store_regular", &self.store_regular)
             .field("store_hardlink_free", &self.store_hardlink_free)
             .field("copy_content", &self.copy_content)
+            .field("symlink_target", &self.symlink_target)
             .field("unmanaged_symlink_target", &self.unmanaged_symlink_target)
             .field("snapshot", &"opaque")
             .finish()
@@ -132,9 +130,7 @@ impl MaterializationFacts {
 
     /// Builds a guard from a fresh no-follow materializer inspection.
     ///
-    /// The operation performs its Git/exclude policy checks before requesting
-    /// the permit; the guard carries the materializer's opaque identity and
-    /// no-follow snapshot into the journal's commit authorization step.
+    /// The operation performs its Git/exclude policy checks before requesting the permit; the guard carries the materializer's opaque identity and no-follow snapshot into the journal's commit authorization step.
     pub(crate) fn write_precondition_guard(
         &self,
         context: CommitContext,
@@ -153,14 +149,14 @@ impl MaterializationFacts {
             store_regular: true,
             store_hardlink_free: true,
             copy_content: CopyContentState::NotCompared,
+            symlink_target: None,
             unmanaged_symlink_target: None,
             snapshot: InspectionSnapshot::for_test(1),
         }
     }
 }
 
-/// A policy-approved filesystem action. Rejection, warning, confirmation, and
-/// user intent remain operation/policy decisions rather than action variants.
+/// A policy-approved filesystem action. Rejection, warning, confirmation, and user intent remain operation/policy decisions rather than action variants.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum MaterializationAction {
     NoOp,
@@ -219,8 +215,7 @@ pub(crate) enum DurableOperationPhase {
     PostCommitValidated,
 }
 
-/// Journal-owned reservation for an artifact that may eventually hold
-/// plaintext. It has no path or identity accessors.
+/// Journal-owned reservation for an artifact that may eventually hold plaintext. It has no path or identity accessors.
 #[derive(PartialEq, Eq)]
 pub(crate) struct ArtifactLease {
     scope: ArtifactScope,
@@ -258,8 +253,7 @@ impl ArtifactLease {
     }
 }
 
-/// A lease after the journal has completed the D5 write-ahead barriers and
-/// authorized a plaintext write. It remains opaque to operations.
+/// A lease after the journal has completed the D5 write-ahead barriers and authorized a plaintext write. It remains opaque to operations.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct WritableArtifactLease {
     reference: ArtifactLeaseReference,
@@ -314,8 +308,7 @@ impl WritableArtifactLease {
     }
 }
 
-/// Filesystem-adapter-private details of a writable artifact. Operations only
-/// receive its opaque [`WritableArtifactLease`].
+/// Filesystem-adapter-private details of a writable artifact. Operations only receive its opaque [`WritableArtifactLease`].
 #[derive(Clone, PartialEq, Eq)]
 pub(in crate::fs) struct AuthorizedTemp {
     path: PathBuf,
@@ -332,8 +325,7 @@ impl AuthorizedTemp {
     }
 }
 
-/// Opaque lease reference retained by a prepared mutation for precondition
-/// and cleanup coordination.
+/// Opaque lease reference retained by a prepared mutation for precondition and cleanup coordination.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ArtifactLeaseReference(u64);
 
@@ -343,8 +335,7 @@ impl fmt::Debug for ArtifactLeaseReference {
     }
 }
 
-/// Context tied to the prepared artifact. It may be passed to the guard, but
-/// offers no temp path, file identity, or lease identifier accessor.
+/// Context tied to the prepared artifact. It may be passed to the guard, but offers no temp path, file identity, or lease identifier accessor.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct CommitContext {
     artifact_lease: ArtifactLeaseReference,
@@ -375,8 +366,7 @@ impl CommitContext {
     }
 }
 
-/// Prepared repo materialization. Operations can advance a durable phase and
-/// request a permit, but cannot discover how a symlink or copy was prepared.
+/// Prepared repo materialization. Operations can advance a durable phase and request a permit, but cannot discover how a symlink or copy was prepared.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct PreparedMaterialization {
     context: CommitContext,
@@ -410,9 +400,7 @@ impl PreparedMaterialization {
     }
 }
 
-/// Adapter-private execution state.  It is deliberately not exposed through
-/// `PreparedMaterialization`, which keeps temporary paths and dispatch details
-/// out of operation code.
+/// Adapter-private execution state.  It is deliberately not exposed through `PreparedMaterialization`, which keeps temporary paths and dispatch details out of operation code.
 #[derive(Clone, PartialEq, Eq)]
 enum PreparedAction {
     NoOp,
@@ -425,9 +413,7 @@ enum PreparedAction {
     },
 }
 
-/// The only destination states a prepared regular-copy install may commit
-/// over.  The expectation remains adapter-private so operations cannot turn a
-/// checked create into an unchecked replacement.
+/// The only destination states a prepared regular-copy install may commit over.  The expectation remains adapter-private so operations cannot turn a checked create into an unchecked replacement.
 #[derive(Clone, PartialEq, Eq)]
 enum CopyDestinationExpectation {
     Missing,
@@ -447,17 +433,14 @@ impl fmt::Debug for CommitPermit {
 }
 
 impl CommitPermit {
-    /// Issues a permit that is valid only for the prepared mutation whose
-    /// opaque context was observed by the precondition guard.
+    /// Issues a permit that is valid only for the prepared mutation whose opaque context was observed by the precondition guard.
     pub(in crate::fs) fn from_guard(guard: WritePreconditionGuard) -> Self {
         Self {
             context: guard.context,
         }
     }
 
-    /// Rejects a permit that was issued for another prepared mutation.  This
-    /// makes the prepare / revalidate / commit boundary enforceable rather
-    /// than merely documentary.
+    /// Rejects a permit that was issued for another prepared mutation.  This makes the prepare / revalidate / commit boundary enforceable rather than merely documentary.
     pub(in crate::fs) fn require_context(&self, context: &CommitContext) -> Result<()> {
         if &self.context != context {
             return Err(AppError::Internal(
@@ -475,8 +458,7 @@ impl CommitPermit {
     }
 }
 
-/// A fresh commit-time guard. It holds opaque materializer facts and artifact
-/// lease context; the operations layer cannot substitute a raw platform fact.
+/// A fresh commit-time guard. It holds opaque materializer facts and artifact lease context; the operations layer cannot substitute a raw platform fact.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct WritePreconditionGuard {
     materialization_snapshot: InspectionSnapshot,
@@ -500,8 +482,7 @@ impl WritePreconditionGuard {
         }
     }
 
-    /// The fixed D5 checklist that the operation's precondition implementation
-    /// must evaluate immediately before a destructive commit.
+    /// The fixed D5 checklist that the operation's precondition implementation must evaluate immediately before a destructive commit.
     pub(crate) const fn required_checks(&self) -> &'static [WritePreconditionCheck] {
         WRITE_PRECONDITION_CHECKS
     }
@@ -521,8 +502,7 @@ impl WritePreconditionGuard {
     }
 }
 
-/// Result of committing a prepared materialization without leaking transfer
-/// implementation details.
+/// Result of committing a prepared materialization without leaking transfer implementation details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MaterializationCommitOutcome {
     Applied,
@@ -531,10 +511,7 @@ pub(crate) enum MaterializationCommitOutcome {
 
 /// Operation-facing mutation journal contract.
 ///
-/// `acquire_artifact_lease` performs the D5 path-recording, repo-side exclude,
-/// private create-new, and identity-recording barriers. Only
-/// `authorize_plaintext_write` may return a writable lease. Concrete adapters
-/// use that lease internally; operations never receive a temp path or handle.
+/// `acquire_artifact_lease` performs the D5 path-recording, repo-side exclude, private create-new, and identity-recording barriers. Only `authorize_plaintext_write` may return a writable lease. Concrete adapters use that lease internally; operations never receive a temp path or handle.
 pub(crate) trait MutationJournal {
     fn acquire_artifact_lease(&mut self, scope: ArtifactScope) -> Result<ArtifactLease>;
 
@@ -548,8 +525,7 @@ pub(crate) trait MutationJournal {
 }
 
 /// Journal used only by recovery actions that cannot create plaintext temps.
-/// It permits symlink-only forward recovery while making any request for a
-/// repo/store temporary artifact fail closed.
+/// It permits symlink-only forward recovery while making any request for a repo/store temporary artifact fail closed.
 pub(crate) struct NoArtifactJournal;
 
 impl MutationJournal for NoArtifactJournal {
@@ -583,9 +559,7 @@ impl MutationJournal for NoArtifactJournal {
 
 /// Operation-facing repository materialization port.
 ///
-/// Implementations own symlink/copy dispatch, secure transfer, no-follow
-/// handling, and artifact population. Operations own durable phase updates,
-/// Git/exclude policy checks, confirmation, and recovery direction.
+/// Implementations own symlink/copy dispatch, secure transfer, no-follow handling, and artifact population. Operations own durable phase updates, Git/exclude policy checks, confirmation, and recovery direction.
 pub(crate) trait Materializer {
     fn inspect(&self, request: MaterializationInspectionRequest) -> Result<MaterializationFacts>;
 
@@ -610,26 +584,19 @@ pub(crate) trait Materializer {
 
 /// Default repository materializer, constructed only by the composition root.
 ///
-/// It is intentionally generic over the link adapter so focused tests can use
-/// a deterministic fake.  Production callers use [`DefaultLinkStrategy`].
-pub(crate) struct DefaultMaterializer<L = DefaultLinkStrategy> {
+/// It owns the platform-appropriate symlink adapter; focused operation tests use a fake [`Materializer`] rather than a filesystem implementation detail.
+pub(crate) struct DefaultMaterializer {
     repo_root: PathBuf,
     store_root: PathBuf,
-    link: L,
+    link: DefaultLinkStrategy,
 }
 
-impl DefaultMaterializer<DefaultLinkStrategy> {
+impl DefaultMaterializer {
     pub(crate) fn new(repo_root: PathBuf, store_root: PathBuf) -> Self {
-        Self::with_link_strategy(repo_root, store_root, DefaultLinkStrategy)
-    }
-}
-
-impl<L> DefaultMaterializer<L> {
-    pub(crate) fn with_link_strategy(repo_root: PathBuf, store_root: PathBuf, link: L) -> Self {
         Self {
             repo_root,
             store_root,
-            link,
+            link: DefaultLinkStrategy,
         }
     }
 
@@ -640,9 +607,7 @@ impl<L> DefaultMaterializer<L> {
         )
     }
 
-    /// Validates a materialization location for a read-only inspection or
-    /// preparation step.  A missing repository-side parent is an expected
-    /// repair condition and must not cause planning or dry-run to write it.
+    /// Validates a materialization location for a read-only inspection or preparation step.  A missing repository-side parent is an expected repair condition and must not cause planning or dry-run to write it.
     fn validate_location_for_inspection(
         &self,
         location: &MaterializationLocation,
@@ -653,9 +618,8 @@ impl<L> DefaultMaterializer<L> {
         Ok((repo, store))
     }
 
-    /// Validates a materialization location immediately before a write.  The
-    /// mutation journal creates missing repository parents before this runs,
-    /// so every intermediate component must now be a real directory.
+    /// Validates a materialization location immediately before a write.
+    /// The mutation journal creates missing repository parents before this runs, so every intermediate component must now be a real directory.
     fn validate_location_for_commit(
         &self,
         location: &MaterializationLocation,
@@ -667,7 +631,7 @@ impl<L> DefaultMaterializer<L> {
     }
 }
 
-impl<L: LinkStrategy> DefaultMaterializer<L> {
+impl DefaultMaterializer {
     fn inspect_location(&self, location: &MaterializationLocation) -> Result<MaterializationFacts> {
         let (repo, store) = self.validate_location_for_inspection(location)?;
         let store_entry = match platform::inspect_no_follow(&store) {
@@ -700,6 +664,7 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
                     store_regular,
                     store_hardlink_free,
                     copy_content: CopyContentState::NotCompared,
+                    symlink_target: None,
                     unmanaged_symlink_target: None,
                     snapshot: InspectionSnapshot::from_entry(None),
                 });
@@ -707,19 +672,21 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
             Err(error) => return Err(error),
         };
 
-        let (repo_entry_kind, unmanaged_symlink_target) = match entry.kind {
-            platform::EntryKind::RegularFile => (RepoEntryKind::RegularFile, None),
-            platform::EntryKind::Directory => (RepoEntryKind::Directory, None),
-            platform::EntryKind::Other => (RepoEntryKind::Other, None),
+        let (repo_entry_kind, symlink_target, unmanaged_symlink_target) = match entry.kind {
+            platform::EntryKind::RegularFile => (RepoEntryKind::RegularFile, None, None),
+            platform::EntryKind::Directory => (RepoEntryKind::Directory, None, None),
+            platform::EntryKind::Other => (RepoEntryKind::Other, None, None),
             platform::EntryKind::SymlinkOrReparsePoint => {
-                let target = self.inspect_link_target(&repo)?;
-                // Both paths were containment-checked before this method is
-                // called. Canonicalization accepts an expected relative link
-                // without exposing platform-specific link mechanics to ops.
+                let (symlink_target, target) = self.inspect_link_target(&repo)?;
+                // Both paths were containment-checked before this method is called. Canonicalization accepts an expected relative link without exposing platform-specific link mechanics to ops.
                 if target.canonicalize().ok() == store.canonicalize().ok() {
-                    (RepoEntryKind::ManagedSymlink, None)
+                    (RepoEntryKind::ManagedSymlink, Some(symlink_target), None)
                 } else {
-                    (RepoEntryKind::UnmanagedSymlinkOrReparsePoint, Some(target))
+                    (
+                        RepoEntryKind::UnmanagedSymlinkOrReparsePoint,
+                        Some(symlink_target),
+                        Some(target),
+                    )
                 }
             }
         };
@@ -744,19 +711,23 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
             store_regular,
             store_hardlink_free,
             copy_content,
+            symlink_target,
             unmanaged_symlink_target,
             snapshot: InspectionSnapshot::from_entry(Some(entry)),
         })
     }
 
-    fn inspect_link_target(&self, link_path: &Path) -> Result<PathBuf> {
-        let target = self.link.read_target(link_path)?;
-        let target = if target.is_absolute() {
-            target
+    fn inspect_link_target(&self, link_path: &Path) -> Result<(PathBuf, PathBuf)> {
+        let symlink_target = self.link.read_target(link_path)?;
+        let resolved_target = if symlink_target.is_absolute() {
+            symlink_target.clone()
         } else {
-            link_path.parent().unwrap_or(&self.repo_root).join(target)
+            link_path
+                .parent()
+                .unwrap_or(&self.repo_root)
+                .join(&symlink_target)
         };
-        Ok(target)
+        Ok((symlink_target, resolved_target))
     }
 
     fn execute(&self, action: MaterializationAction) -> Result<MaterializationCommitOutcome> {
@@ -836,8 +807,7 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
     }
 
     fn replace(&self, store: &Path, repo: &Path, strategy: MaterializationStrategy) -> Result<()> {
-        // Copy replacement is already atomic.  A symlink is prepared beside
-        // its destination and atomically installed through the platform port.
+        // Copy replacement is already atomic.  A symlink is prepared beside its destination and atomically installed through the platform port.
         debug_assert_eq!(strategy, MaterializationStrategy::Symlink);
         let parent = repo
             .parent()
@@ -865,8 +835,7 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
         }
 
         // Capture the canonical source identity before plaintext population.
-        // Commit compares this opaque snapshot again, so an external store
-        // replacement or new hardlink cannot be silently materialized.
+        // Commit compares this opaque snapshot again, so an external store replacement or new hardlink cannot be silently materialized.
         let store_entry = platform::inspect_no_follow(&store)?;
         if store_entry.kind != platform::EntryKind::RegularFile || store_entry.link_count > 1 {
             return Err(AppError::UnsafeFilesystemEntry {
@@ -900,7 +869,7 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
     }
 }
 
-impl<L: LinkStrategy> Materializer for DefaultMaterializer<L> {
+impl Materializer for DefaultMaterializer {
     fn inspect(&self, request: MaterializationInspectionRequest) -> Result<MaterializationFacts> {
         self.inspect_location(&request.location)
     }
@@ -987,9 +956,7 @@ impl<L: LinkStrategy> Materializer for DefaultMaterializer<L> {
     }
 }
 
-/// An opaque no-follow identity snapshot. The concrete Phase 3 materializer
-/// will populate it from the D1 platform adapter. Keeping the representation
-/// private lets that implementation evolve without changing operation APIs.
+/// An opaque no-follow identity snapshot. The concrete Phase 3 materializer will populate it from the D1 platform adapter. Keeping the representation private lets that implementation evolve without changing operation APIs.
 #[derive(Clone, PartialEq, Eq)]
 pub(in crate::fs) struct InspectionSnapshot(Option<platform::InspectedEntry>);
 

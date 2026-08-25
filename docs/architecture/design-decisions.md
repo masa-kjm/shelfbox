@@ -17,7 +17,7 @@
 | **Repair is ownership-neutral** | `repo repair` and `item repair` restore local integration but never assign a different `RepoId` or change item ownership state. |
 | **Conservative GC** | GC may delete only confirmed `orphaned` items. `attached`, `detached`, and `unreachable` items are protected. Manifest entries are removed and saved before store files are deleted, so a manifest-save failure does not remove data. Repository store directories are not deleted merely because a local clone is missing. |
 | **Namespace is UI only** | Directory grouping is derived from `item.path`. Namespace entries are not persisted as identity, ownership, recovery, reclaim, repair, or GC metadata. |
-| **Configured strategy is a default, observed strategy is runtime state** | `materialization = symlink|copy` selects only future or missing repo-side entries. The manifest stores no per-item strategy; operations inspect the actual symlink or regular copy, so changing config never converts an existing item. `LinkStrategy` remains the low-level symlink adapter. |
+| **Configured strategy is a default, observed strategy is runtime state** | `materialization = symlink|copy` selects only future or missing repo-side entries. The manifest stores no per-item strategy; operations inspect the actual symlink or regular copy, so changing config never converts an existing item. |
 | **`# BEGIN shelfbox` block in exclude** | All shelfbox entries are wrapped in a named block so other tools can safely edit `.git/info/exclude`; content outside the block is preserved. |
 | **Store-level advisory file lock** | Repo-context operations acquire `<store>/.lock` so ordinary item and repository writes do not interleave index and manifest updates. |
 | **Machine-readable exit codes** | Status and verify commands return stable process codes so they can be used in scripts and CI. |
@@ -463,8 +463,7 @@ materialization implementation. The concrete Phase 3 adapters will live under
 
 ### Typed actions and facts
 
-`fs::materializer::MaterializationAction` is the only repository
-materialization mutation vocabulary:
+`fs::materializer::MaterializationAction` is the only repository materialization mutation vocabulary:
 
 * `NoOp`;
 * `Create { location, strategy }`;
@@ -473,17 +472,9 @@ materialization mutation vocabulary:
 * `RestoreToRegular { location, expected }`.
 
 `location` consists only of normalized repo-relative and store-relative paths.
-`expected` carries a visible high-level entry kind plus a private identity
-snapshot. A `Materializer::inspect` result similarly exposes policy-relevant
-no-follow facts—entry kind, final-component inspection state, link count, and
-hardlink safety—without exposing raw file identities or platform handles.
-Operations obtain `ExpectedMaterialization` from those facts rather than
-constructing an identity precondition themselves.
+`expected` carries a visible high-level entry kind plus a private identity snapshot. A `Materializer::inspect` result similarly exposes policy-relevant no-follow facts—entry kind, final-component inspection state, link count, and hardlink safety—without exposing raw file identities or platform handles. It also retains the immediate symlink target spelling only for diagnostic reports; operations must not use that value as a mutation destination. Operations obtain `ExpectedMaterialization` from those facts rather than constructing an identity precondition themselves.
 
-`Materializer` has four methods: read-only `inspect`, `prepare`, `commit`, and
-`abort`. It owns symlink/copy dispatch, platform inspection, secure transfer,
-and artifact population. It does not own Git/exclude policy, confirmation,
-manifest ownership, durable operation direction, or user-facing reports.
+`Materializer` has four methods: read-only `inspect`, `prepare`, `commit`, and `abort`. It owns symlink/copy dispatch, platform inspection, secure transfer, and artifact population. It does not own Git/exclude policy, confirmation, manifest ownership, durable operation direction, or user-facing reports.
 
 Canonical store movement uses the distinct `fs::canonical_transfer::CanonicalTransfer` port. Its `Move` and `ReplaceFromRepo` actions name logical canonical endpoints and expected state, but never choose rename, copy, or cross-device transfer algorithms. It has the same inspect/prepare/commit/abort lifecycle as `Materializer`; its separate best-effort empty-item-ancestor cleanup runs only after durable completion.
 
@@ -519,18 +510,7 @@ Git/exclude state including artifact leases, and planned destination equality.
 
 ### Dependency enforcement
 
-`crates/shelfbox-core/tests/architecture_boundaries.rs` is active before the
-first copy-aware operation migration. It rejects production `ops/` references
-to platform modules, secure transfer, symlink helpers, and platform-specific
-symlink APIs. It also prevents `LinkStrategy` and direct copy/rename/removal/
-read-link calls from spreading beyond the current symlink-only modules.
-
-The following existing modules remain an explicit legacy baseline: `info`, `integrity`, `move_item`, `relink`, `repair`, and `status`.
-Their total `LinkStrategy` references may decrease from the recorded ceiling of 30 but may not increase or appear in a new production operation module.
-Their narrowly enumerated direct filesystem calls are likewise allowlisted only in the existing operation files.
-Each Phase 3 operation migration must remove its legacy allowance; no copy-aware operation may use one.
-`add` and `restore` now receive `Materializer` and `CanonicalTransfer` ports, and the source guard rejects their direct use of legacy link strategies or default adapters.
-This preserves existing symlink behavior while making the dependency boundary enforceable now.
+`crates/shelfbox-core/tests/architecture_boundaries.rs` is active before the first copy-aware operation migration. It rejects production `ops/` references to platform modules, secure transfer, symlink helpers, and platform-specific symlink APIs.
 
 ### Prototype tests
 

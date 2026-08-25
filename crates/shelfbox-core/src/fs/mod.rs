@@ -11,6 +11,3 @@ pub(crate) mod permissions;
 pub(crate) mod platform;
 pub(crate) mod secure_transfer;
 mod symlink;
-
-// Operation-facing symlink port for operations not yet migrated to Materializer.
-pub(crate) use symlink::{DefaultLinkStrategy, LinkStrategy};

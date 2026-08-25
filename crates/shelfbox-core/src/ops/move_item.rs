@@ -22,7 +22,6 @@ use crate::{
         recovery_fingerprint::RecoveryFingerprint,
     },
     error::{AppError, Result},
-    fs::LinkStrategy,
     fs::{
         canonical_transfer::{
             CanonicalEntryKind, CanonicalInspectionPurpose, CanonicalTransfer,
@@ -48,7 +47,6 @@ pub fn move_item(
     old_abs: &Path,
     new_abs: &Path,
     dry_run: bool,
-    _link: &dyn LinkStrategy,
     ignore: &dyn IgnoreBackend,
 ) -> Result<ItemMoveReport> {
     let plan = ItemMovePlan::build(ctx, old_abs, new_abs)?;

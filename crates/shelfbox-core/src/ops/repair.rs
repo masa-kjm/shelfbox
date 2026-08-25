@@ -39,10 +39,9 @@ use super::path::repo_relative_string;
 /// Item repair never changes the target managed exclude entry. It requires the
 /// entry to already exist, then creates only a missing materialization through
 /// the configured strategy.
-pub(crate) fn repair_report<L: ?Sized>(
+pub(crate) fn repair_report(
     ctx: &RepoContext,
     abs_path: &Path,
-    _legacy_link: &L,
     dry_run: bool,
     force: bool,
 ) -> Result<ItemRepairReport> {
@@ -502,12 +501,7 @@ fn identity_hints_need_update(ctx: &RepoContext, current: &context::CurrentGitCo
 /// Repairs local working tree integration for the repository already
 /// associated with `ctx.repo_id`. The desired target exclude set is durably
 /// written and verified before any materialization is changed.
-pub fn repair_repo<L: ?Sized>(
-    ctx: &mut RepoContext,
-    _legacy_link: &L,
-    dry_run: bool,
-    force: bool,
-) -> Result<RepairRepoReport> {
+pub fn repair_repo(ctx: &mut RepoContext, dry_run: bool, force: bool) -> Result<RepairRepoReport> {
     let current = context::current_git_context(&ctx.repo_root)?;
     let idx = index::load(&ctx.config.store)?;
     let associated_repo_id = context::resolve_existing_repo(&current, &idx)

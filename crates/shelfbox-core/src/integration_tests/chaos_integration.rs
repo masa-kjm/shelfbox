@@ -1,19 +1,13 @@
 /// Chaos-style integration tests for failure scenarios.
 ///
-/// Each test simulates a real-world failure mode (deleted files, missing index,
-/// linked worktrees, partial corruption) and verifies that shelfbox detects
-/// the problem correctly and recovers where possible.
+/// Each test simulates a real-world failure mode (deleted files, missing index, linked worktrees, partial corruption) and verifies that shelfbox detects the problem correctly and recovers where possible.
 ///
-/// These tests complement the happy-path and error-path coverage in
-/// `ops_integration.rs`.  See `docs/failure-matrix.md` for the full list of
-/// failure modes and their recovery strategies.
+/// These tests complement the happy-path and error-path coverage in `ops_integration.rs`.  See `docs/failure-matrix.md` for the full list of failure modes and their recovery strategies.
 use std::process::Command as StdCommand;
 
 use tempfile::TempDir;
 
-use shelfbox_core::{
-    context, fs::DefaultLinkStrategy, git::exclude::GitInfoExclude, ops, ops::integrity::FixResult,
-};
+use shelfbox_core::{context, git::exclude::GitInfoExclude, ops, ops::integrity::FixResult};
 
 use crate::integration_test_common as common;
 
@@ -23,11 +17,9 @@ fn require_symlink_support() -> bool {
 
 // ── Worktree scenarios (failure matrix #6) ────────────────────────────────────
 
-/// Accessing a repository via a linked worktree must reuse the same ULID as
-/// the main clone so that both share a single shelf.
+/// Accessing a repository via a linked worktree must reuse the same ULID as the main clone so that both share a single shelf.
 ///
-/// Mechanism: `git_common_dir` for a linked worktree points to the main
-/// clone's `.git/`, which is used as the secondary lookup key in the index.
+/// Mechanism: `git_common_dir` for a linked worktree points to the main clone's `.git/`, which is used as the secondary lookup key in the index.
 #[test]
 fn worktree_add_reuses_repo_ulid() {
     let main_dir = common::init_git_repo_with_commit();
@@ -60,8 +52,7 @@ fn worktree_add_reuses_repo_ulid() {
     );
 }
 
-/// Items shelved from the main clone must appear in the manifest when the
-/// repository is accessed via a linked worktree.
+/// Items shelved from the main clone must appear in the manifest when the repository is accessed via a linked worktree.
 #[test]
 fn worktree_shelved_items_visible_from_linked_worktree() {
     if !require_symlink_support() {
@@ -69,7 +60,6 @@ fn worktree_shelved_items_visible_from_linked_worktree() {
     }
     let main_dir = common::init_git_repo_with_commit();
     let store_dir = TempDir::new().unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // Shelve a file from the main clone.
@@ -77,7 +67,7 @@ fn worktree_shelved_items_visible_from_linked_worktree() {
     std::fs::write(&file_path, "TOKEN=abc").unwrap();
 
     let mut ctx = context::build_create_or_load(main_dir.path(), Some(store_dir.path())).unwrap();
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     drop(ctx);
 
     // Create a linked worktree.
@@ -107,9 +97,7 @@ fn worktree_shelved_items_visible_from_linked_worktree() {
 
 // ── Index lost (failure matrix #4) ───────────────────────────────────────────
 
-/// When `index.json` is deleted, `context::build_create_or_load` creates a
-/// fresh index entry with a new ULID. The old store directory is untouched
-/// (no data loss), but it becomes an orphan unreachable via the new context.
+/// When `index.json` is deleted, `context::build_create_or_load` creates a fresh index entry with a new ULID. The old store directory is untouched (no data loss), but it becomes an orphan unreachable via the new context.
 #[test]
 fn index_deleted_creates_fresh_context_with_empty_manifest() {
     if !require_symlink_support() {
@@ -117,7 +105,6 @@ fn index_deleted_creates_fresh_context_with_empty_manifest() {
     }
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // Shelve a file to populate the store.
@@ -125,7 +112,7 @@ fn index_deleted_creates_fresh_context_with_empty_manifest() {
     std::fs::write(&file_path, "secret").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     let original_repo_id = ctx.repo_id.clone();
     let original_store = ctx.repo_store.clone();
     drop(ctx);
@@ -173,8 +160,7 @@ fn index_deleted_creates_fresh_context_with_empty_manifest() {
 
 // ── Concurrent read access (failure matrix #9) ───────────────────────────────
 
-/// Multiple read-only contexts on the same store must coexist without
-/// blocking each other (shared `flock` mode).
+/// Multiple read-only contexts on the same store must coexist without blocking each other (shared `flock` mode).
 #[test]
 fn concurrent_read_locks_are_shared() {
     let repo_dir = common::init_git_repo();
@@ -212,10 +198,8 @@ fn concurrent_read_locks_are_shared() {
 
 // ── Partial store corruption (failure matrix #10) ─────────────────────────────
 
-/// When some store items are deleted while others remain intact, `repo status`
-/// must report a mixed result: healthy items alongside irrecoverable ones.
-/// `repo repair` must record `CannotFix` for the missing items without
-/// touching the healthy ones.
+/// When some store items are deleted while others remain intact, `repo status` must report a mixed result: healthy items alongside irrecoverable ones.
+/// `repo repair` must record `CannotFix` for the missing items without touching the healthy ones.
 #[test]
 fn partial_store_corruption_shows_mixed_status() {
     if !require_symlink_support() {
@@ -223,7 +207,6 @@ fn partial_store_corruption_shows_mixed_status() {
     }
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // Shelve three files.
@@ -239,13 +222,13 @@ fn partial_store_corruption_shows_mixed_status() {
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     for p in &paths {
-        common::add_report(&mut ctx, p, false, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, p, false, &ignore).unwrap();
     }
 
     // Corrupt one store item (simulate partial copy or deletion).
     std::fs::remove_file(ctx.repo_store.join("items/beta.txt")).unwrap();
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert_eq!(
         report.items.len(),
@@ -269,7 +252,7 @@ fn partial_store_corruption_shows_mixed_status() {
     );
 
     // doctor --fix must record CannotFix for the missing item.
-    let fix_report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let fix_report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
     assert!(
         fix_report
             .actions

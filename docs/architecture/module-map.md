@@ -76,11 +76,7 @@ store
   Crate-private compatibility namespace over storage modules
 
 fs, git
-  Filesystem, Git, ignore-file, and symlink adapters. `fs::materializer` and
-  `fs::canonical_transfer` are crate-private operation-facing ports. The legacy
-  `fs::LinkStrategy` trait remains the transitional boundary used by `ops/`.
-  `fs::DefaultLinkStrategy` is the concrete, platform-aware adapter selected at
-  the API/composition root rather than being constructed inside `ops/`.
+  Filesystem, Git, and ignore-file adapters. Every operation performs repository materialization inspection and mutation through `Materializer`; the symlink implementation is private to `fs`.
 
 fs/platform
   Private no-follow, identity, link-count, atomic-replacement, and durability
@@ -88,28 +84,18 @@ fs/platform
   not import this module.
 ```
 
-Implementation modules are intentionally crate-private. Tests that need this
-level of access should live inside `shelfbox-core` rather than forcing broad
-public exports.
-
 ## Dependency Direction
 
 ```text
 shelfbox::commands
   -> shelfbox_core::api
-    -> fs::DefaultLinkStrategy
+    -> fs::materializer
     -> ops
       -> policy
       -> storage/store
-      -> fs::materializer / fs::canonical_transfer / fs::LinkStrategy / git
+      -> fs::materializer / fs::canonical_transfer / git
         -> fs::symlink / secure transfer / platform adapters
     -> domain / plan / error
 ```
 
-Policy code should not perform I/O. Storage code should not own command
-semantics. CLI code should not decide core safety rules. Operations orchestrate
-typed actions and durable phases but do not construct concrete adapters or use
-platform, symlink, or secure-transfer helpers directly. `LinkStrategy` remains
-an operation-facing legacy trait, while `DefaultLinkStrategy` is the API-owned
-composition root that selects the concrete platform adapter. This keeps behavior
-testable and keeps public API changes intentional.
+Policy code should not perform I/O. Storage code should not own command semantics. CLI code should not decide core safety rules. Operations orchestrate typed actions and durable phases without using platform, symlink, or secure-transfer helpers directly.

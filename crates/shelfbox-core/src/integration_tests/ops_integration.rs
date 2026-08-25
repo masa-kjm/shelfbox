@@ -1,26 +1,18 @@
 /// Integration tests for the ops layer.
 ///
-/// Each test spins up a real Git repository in a temp directory and exercises
-/// the core operations end-to-end using real file I/O and (where required)
-/// real Git subprocesses.  No mocking is used; the tests verify the full
-/// interaction between context, manifest, link strategy and ignore backend.
-use std::{
-    cell::Cell,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+/// Each test spins up a real Git repository in a temp directory and exercises the core operations end-to-end using real file I/O and (where required) real Git subprocesses.  No mocking is used; the tests verify the full interaction between context, manifest, filesystem materialization, and ignore backend.
+use std::{cell::Cell, rc::Rc};
 
 use tempfile::TempDir;
 
 use shelfbox_core::{
-    context,
+    api, context,
     domain::{
         materialization::MaterializationStrategy, operation_record::OperationPhase,
         ownership::OwnershipState,
     },
-    error::{AppError, Result},
+    error::AppError,
     failpoint::{self, Failpoint},
-    fs::{DefaultLinkStrategy, LinkStrategy},
     git::exclude::{GitInfoExclude, IgnoreBackend},
     ops,
     ops::integrity::FixResult,
@@ -41,42 +33,6 @@ fn require_symlink_support() -> bool {
     common::require_symlink_support()
 }
 
-/// A link adapter that rejects every link operation. Copy-mode tests use it to
-/// prove that the workflow never relies on symlink capability merely because a
-/// legacy adapter is still accepted at the operation boundary.
-struct UnavailableLinkStrategy;
-
-impl LinkStrategy for UnavailableLinkStrategy {
-    fn create(&self, _target: &Path, link_path: &Path) -> Result<()> {
-        Err(AppError::Internal(format!(
-            "link capability must not be used for Copy materialization: {}",
-            link_path.display()
-        )))
-    }
-
-    fn remove(&self, link_path: &Path) -> Result<()> {
-        Err(AppError::Internal(format!(
-            "link capability must not be used for Copy materialization: {}",
-            link_path.display()
-        )))
-    }
-
-    fn is_managed_link(&self, _link_path: &Path, _store_root: &Path) -> bool {
-        false
-    }
-
-    fn is_link(&self, _path: &Path) -> bool {
-        false
-    }
-
-    fn read_target(&self, path: &Path) -> Result<PathBuf> {
-        Err(AppError::Internal(format!(
-            "link capability must not be used for Copy materialization: {}",
-            path.display()
-        )))
-    }
-}
-
 // ── add / restore ─────────────────────────────────────────────────────────────
 
 #[test]
@@ -92,11 +48,10 @@ fn add_and_restore_file() {
     std::fs::write(&file_path, "sensitive data").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // --- add ---
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Original path should now be a symlink.
     assert!(
@@ -117,6 +72,13 @@ fn add_and_restore_file() {
     let store_path = ctx.repo_store.join("items/secret.txt");
     assert!(store_path.exists(), "store-side file must exist");
 
+    let info = api::item::info(&ctx, &file_path).unwrap();
+    assert_eq!(info.link_target.as_deref(), Some(store_path.as_path()));
+    assert!(
+        info.symlink_ok,
+        "item info must recognize the managed symlink"
+    );
+
     // Manifest must reflect the addition.
     assert_eq!(ctx.manifest.items.len(), 1);
     assert_eq!(ctx.manifest.items[0].path, "secret.txt");
@@ -127,12 +89,12 @@ fn add_and_restore_file() {
     assert_eq!(items[0].path, "secret.txt");
 
     // --- status: everything should be healthy ---
-    let statuses = ops::status::status(&ctx, &link, &ignore).unwrap();
+    let statuses = ops::status::status(&ctx, &common::materializer(&ctx), &ignore).unwrap();
     assert_eq!(statuses.len(), 1);
     assert!(statuses[0].ok, "status should be ok after add");
 
     // --- restore ---
-    common::restore(&mut ctx, &file_path, false, false, false, &link, &ignore).unwrap();
+    common::restore(&mut ctx, &file_path, false, false, false, &ignore).unwrap();
     let restored_meta = file_path.symlink_metadata().unwrap();
     assert!(
         !restored_meta.file_type().is_symlink(),
@@ -168,14 +130,13 @@ fn restore_prunes_empty_store_item_ancestors_without_removing_shared_parents() {
     std::fs::write(&second_path, "second").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &first_path, false, &link, &ignore).unwrap();
-    common::add_report(&mut ctx, &second_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &first_path, false, &ignore).unwrap();
+    common::add_report(&mut ctx, &second_path, false, &ignore).unwrap();
 
     let items_dir = ctx.repo_store.join("items");
     let store_parent = items_dir.join("config");
-    common::restore(&mut ctx, &first_path, false, false, false, &link, &ignore).unwrap();
+    common::restore(&mut ctx, &first_path, false, false, false, &ignore).unwrap();
 
     assert!(
         store_parent.is_dir(),
@@ -183,7 +144,7 @@ fn restore_prunes_empty_store_item_ancestors_without_removing_shared_parents() {
     );
     assert!(store_parent.join("second.env").is_file());
 
-    common::restore(&mut ctx, &second_path, false, false, false, &link, &ignore).unwrap();
+    common::restore(&mut ctx, &second_path, false, false, false, &ignore).unwrap();
 
     assert!(
         items_dir.is_dir(),
@@ -208,13 +169,11 @@ fn namespace_restore_prunes_all_empty_store_item_ancestors() {
     std::fs::write(secrets_dir.join("two.env"), "two").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_directory(&mut ctx, &secrets_dir, false, &link, &ignore).unwrap();
+    common::add_directory(&mut ctx, &secrets_dir, false, &ignore).unwrap();
 
     let result =
-        common::restore_namespace(&mut ctx, "secrets/", false, false, false, &link, &ignore)
-            .unwrap();
+        common::restore_namespace(&mut ctx, "secrets/", false, false, false, &ignore).unwrap();
 
     assert!(result
         .results
@@ -240,9 +199,8 @@ fn restore_succeeds_when_empty_item_directory_cleanup_is_not_permitted() {
     std::fs::write(&file_path, "secret").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     let items_dir = ctx.repo_store.join("items");
     let canonical_path = items_dir.join("secret/local.env");
@@ -251,7 +209,7 @@ fn restore_succeeds_when_empty_item_directory_cleanup_is_not_permitted() {
     locked_permissions.set_mode(0o500);
     std::fs::set_permissions(&items_dir, locked_permissions).unwrap();
 
-    let result = common::restore(&mut ctx, &file_path, false, false, false, &link, &ignore);
+    let result = common::restore(&mut ctx, &file_path, false, false, false, &ignore);
 
     std::fs::set_permissions(&items_dir, original_permissions).unwrap();
     result.unwrap();
@@ -303,7 +261,6 @@ fn add_phase_failpoints_recover_to_one_valid_state() {
         let store_dir = TempDir::new().unwrap();
         let file_path = repo_dir.path().join("interrupted.txt");
         std::fs::write(&file_path, "durable secret").unwrap();
-        let link = DefaultLinkStrategy;
         let ignore = GitInfoExclude;
         let mut ctx =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
@@ -317,7 +274,7 @@ fn add_phase_failpoints_recover_to_one_valid_state() {
             Ok(())
         });
         assert!(matches!(
-            common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+            common::add_report(&mut ctx, &file_path, false, &ignore),
             Err(AppError::Internal(_))
         ));
         drop(hook);
@@ -366,7 +323,6 @@ fn add_destination_replacement_failpoint_advances_from_the_next_physical_phase()
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("replacement-interrupt.txt");
     std::fs::write(&file_path, "advance safely").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     let hook = failpoint::install_test_hook(|point| {
@@ -380,7 +336,7 @@ fn add_destination_replacement_failpoint_advances_from_the_next_physical_phase()
         Ok(())
     });
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+        common::add_report(&mut ctx, &file_path, false, &ignore),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -408,12 +364,11 @@ fn add_copy_creates_independent_regular_materialization() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("copy.txt");
     std::fs::write(&file_path, "copy me").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     let store_path = ctx.repo_store.join("items/copy.txt");
     assert!(!file_path
@@ -444,10 +399,9 @@ fn item_materialize_converts_only_equal_materializations_and_preserves_manifest(
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("convert.txt");
     std::fs::write(&file_path, "canonical").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     let manifest_before = serde_json::to_string(&ctx.manifest).unwrap();
 
     let to_copy = ops::materialize::materialize_report(
@@ -513,11 +467,10 @@ fn item_materialize_dry_run_is_mutation_free_and_diverged_copy_requires_sync() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("copy-convert.txt");
     std::fs::write(&file_path, "canonical").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
@@ -560,12 +513,11 @@ fn repo_sync_validates_every_attached_item_before_any_write() {
     let second = repo_dir.path().join("second.txt");
     std::fs::write(&first, "first canonical").unwrap();
     std::fs::write(&second, "second canonical").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
-    common::add_report(&mut ctx, &first, false, &link, &ignore).unwrap();
-    common::add_report(&mut ctx, &second, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &first, false, &ignore).unwrap();
+    common::add_report(&mut ctx, &second, false, &ignore).unwrap();
     std::fs::write(&first, "first local edit").unwrap();
     common::run_git(repo_dir.path(), &["add", "-f", "second.txt"]);
 
@@ -597,15 +549,14 @@ fn repo_sync_and_materialize_reuse_item_level_plans() {
     let second = repo_dir.path().join("second.txt");
     std::fs::write(&first, "first canonical").unwrap();
     std::fs::write(&second, "second canonical").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     // Preserve a symlink item while creating a second Copy item. Repo-level
     // orchestration must classify observed strategies independently rather
     // than applying the current config retroactively.
-    common::add_report(&mut ctx, &first, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &first, false, &ignore).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
-    common::add_report(&mut ctx, &second, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &second, false, &ignore).unwrap();
     assert!(first.symlink_metadata().unwrap().file_type().is_symlink());
     assert!(!second.symlink_metadata().unwrap().file_type().is_symlink());
     std::fs::write(&second, "second local edit").unwrap();
@@ -659,12 +610,11 @@ fn repo_batches_reject_confirmation_and_invalid_conversion_before_writes() {
     let second = repo_dir.path().join("second.txt");
     std::fs::write(&first, "first canonical").unwrap();
     std::fs::write(&second, "second canonical").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
-    common::add_report(&mut ctx, &first, false, &link, &ignore).unwrap();
-    common::add_report(&mut ctx, &second, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &first, false, &ignore).unwrap();
+    common::add_report(&mut ctx, &second, false, &ignore).unwrap();
 
     std::fs::write(&first, "first local edit").unwrap();
     assert!(matches!(
@@ -712,11 +662,10 @@ fn repo_sync_from_store_requires_confirmation_only_when_writing() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("from-store-confirmation.txt");
     std::fs::write(&file_path, "canonical").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     std::fs::write(&file_path, "repo edit").unwrap();
     assert!(matches!(
@@ -778,11 +727,10 @@ fn repo_sync_from_repo_noop_and_dry_run_do_not_require_confirmation() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("from-repo-noop.txt");
     std::fs::write(&file_path, "equal").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     let dry_run = ops::repo_sync::sync_repo_report(
         &mut ctx,
@@ -820,7 +768,7 @@ fn repo_sync_from_repo_noop_and_dry_run_do_not_require_confirmation() {
 }
 
 #[test]
-fn copy_add_succeeds_without_link_strategy() {
+fn copy_add_materializes_a_regular_file() {
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("copy-without-link.txt");
@@ -828,14 +776,7 @@ fn copy_add_succeeds_without_link_strategy() {
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    common::add_report(
-        &mut ctx,
-        &file_path,
-        false,
-        &UnavailableLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &file_path, false, &GitInfoExclude).unwrap();
 
     let store_path = ctx.repo_store.join("items/copy-without-link.txt");
     assert!(!file_path
@@ -904,14 +845,7 @@ fn add_copy_for_sync(
     std::fs::write(&path, contents).unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
-    common::add_report(
-        &mut ctx,
-        &path,
-        false,
-        &DefaultLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &path, false, &GitInfoExclude).unwrap();
     let store = ctx.repo_store.join("items").join(name);
     (ctx, path, store)
 }
@@ -1334,7 +1268,6 @@ fn add_commit_authorization_rechecks_exclude_after_operation_validation() {
     let file_path = repo_dir.path().join("commit-exclude-race.txt");
     std::fs::write(&file_path, "must not move").unwrap();
     let repo_root = repo_dir.path().to_path_buf();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     let hook = failpoint::install_test_hook(move |point| {
@@ -1345,7 +1278,8 @@ fn add_commit_authorization_rechecks_exclude_after_operation_validation() {
     });
 
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+        common::add_report(&mut ctx, &file_path, false,
+        &ignore),
         Err(AppError::Internal(message)) if message.contains("exclude was removed before commit authorization")
     ));
     drop(hook);
@@ -1369,7 +1303,6 @@ fn copy_add_rejects_a_store_change_between_prepare_and_commit() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("copy-store-race.txt");
     std::fs::write(&file_path, "original").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
@@ -1391,7 +1324,7 @@ fn copy_add_rejects_a_store_change_between_prepare_and_commit() {
     });
 
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+        common::add_report(&mut ctx, &file_path, false, &ignore),
         Err(AppError::FilesystemEntryChanged { .. })
     ));
     drop(hook);
@@ -1415,7 +1348,6 @@ fn interrupted_copy_add_recovers_after_canonical_transfer() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("copy-interrupt.txt");
     std::fs::write(&file_path, "recover copy").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
@@ -1426,7 +1358,7 @@ fn interrupted_copy_add_recovers_after_canonical_transfer() {
         Ok(())
     });
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+        common::add_report(&mut ctx, &file_path, false, &ignore),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -1459,7 +1391,6 @@ fn add_recovery_preserves_an_externally_recreated_repo_path_as_conflict() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("external-race.txt");
     std::fs::write(&file_path, "canonical content").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     let hook = failpoint::install_test_hook(|point| {
@@ -1469,7 +1400,7 @@ fn add_recovery_preserves_an_externally_recreated_repo_path_as_conflict() {
         Ok(())
     });
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+        common::add_report(&mut ctx, &file_path, false, &ignore),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -1499,7 +1430,6 @@ fn add_interruption_before_transfer_never_writes_a_newly_tracked_source() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("tracked-race.txt");
     std::fs::write(&file_path, "do not move").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     let hook = failpoint::install_test_hook(|point| {
@@ -1509,7 +1439,7 @@ fn add_interruption_before_transfer_never_writes_a_newly_tracked_source() {
         Ok(())
     });
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+        common::add_report(&mut ctx, &file_path, false, &ignore),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -1560,10 +1490,9 @@ fn add_exclude_failure_leaves_the_source_unchanged() {
     let file_path = repo_dir.path().join("exclude-failure.txt");
     std::fs::write(&file_path, "keep source").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
 
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &FailingAddIgnore),
+        common::add_report(&mut ctx, &file_path, false, &FailingAddIgnore),
         Err(AppError::Internal(_))
     ));
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "keep source");
@@ -1586,11 +1515,10 @@ fn add_rejects_a_hardlinked_source_before_creating_a_record() {
     std::fs::write(&file_path, "shared inode").unwrap();
     std::fs::hard_link(&file_path, &alias).unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+        common::add_report(&mut ctx, &file_path, false, &ignore),
         Err(AppError::HardlinkedFile { .. })
     ));
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "shared inode");
@@ -1612,10 +1540,9 @@ fn directory_add_uses_independent_item_records() {
     std::fs::write(directory.join("one.txt"), "one").unwrap();
     std::fs::write(directory.join("two.txt"), "two").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    let report = common::add_directory(&mut ctx, &directory, false, &link, &ignore).unwrap();
+    let report = common::add_directory(&mut ctx, &directory, false, &ignore).unwrap();
 
     assert_eq!(report.results.len(), 2);
     assert!(report
@@ -1643,10 +1570,9 @@ fn add_across_filesystems_uses_a_durable_store_temp() {
     let file_path = repo_dir.path().join("cross-device.txt");
     std::fs::write(&file_path, "cross device").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     assert!(file_path
         .symlink_metadata()
@@ -1661,7 +1587,7 @@ fn add_across_filesystems_uses_a_durable_store_temp() {
 
 #[test]
 #[cfg(unix)]
-fn copy_add_across_filesystems_does_not_require_link_support() {
+fn copy_add_across_filesystems_materializes_a_regular_file() {
     let repo_dir = common::init_git_repo();
     let Some(store_dir) = common::tempdir_on_second_filesystem_or_skip(
         repo_dir.path(),
@@ -1674,14 +1600,7 @@ fn copy_add_across_filesystems_does_not_require_link_support() {
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    common::add_report(
-        &mut ctx,
-        &file_path,
-        false,
-        &UnavailableLinkStrategy,
-        &GitInfoExclude,
-    )
-    .unwrap();
+    common::add_report(&mut ctx, &file_path, false, &GitInfoExclude).unwrap();
 
     let store_path = ctx.repo_store.join("items/copy-cross-device.txt");
     assert!(!file_path
@@ -1708,7 +1627,6 @@ fn copy_add_exclude_loss_after_materialization_is_a_non_destructive_conflict() {
     let store_dir = TempDir::new().unwrap();
     let file_path = repo_dir.path().join("exclude-loss-copy.txt");
     std::fs::write(&file_path, "copy survives").unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
@@ -1719,7 +1637,7 @@ fn copy_add_exclude_loss_after_materialization_is_a_non_destructive_conflict() {
         Ok(())
     });
     assert!(matches!(
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore),
+        common::add_report(&mut ctx, &file_path, false, &ignore),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -1758,12 +1676,11 @@ fn add_dry_run_makes_no_changes() {
     std::fs::write(&file_path, "[settings]").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    common::add_report(&mut ctx, &file_path, true, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, true, &ignore).unwrap();
 
     // File must remain a regular file.
     assert!(
@@ -1802,17 +1719,16 @@ fn restore_dry_run_makes_no_changes() {
     std::fs::write(&file_path, "# notes").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // Actually shelve the file first.
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     assert_eq!(ctx.manifest.items.len(), 1);
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
     // Dry-run restore.
-    let report = common::restore(&mut ctx, &file_path, true, false, false, &link, &ignore).unwrap();
+    let report = common::restore(&mut ctx, &file_path, true, false, false, &ignore).unwrap();
     assert!(report.dry_run);
     assert_eq!(report.plan.path, "notes/drafts/notes.md");
     assert_eq!(report.plan.action, ItemRestoreAction::RestoreFile);
@@ -1837,10 +1753,8 @@ fn add_already_managed_returns_error() {
     if !require_symlink_support() {
         return;
     }
-    // Simulate an inconsistent state: the manifest records the item but the
-    // symlink was removed and the original file was copied back manually.
-    // In this state the path is a regular file, not a symlink, so the
-    // IsSymlink check passes, but the manifest check must fire.
+    // Simulate an inconsistent state: the manifest records the item but the symlink was removed and the original file was copied back manually.
+    // In this state the path is a regular file, not a symlink, so the IsSymlink check passes, but the manifest check must fire.
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
 
@@ -1848,21 +1762,18 @@ fn add_already_managed_returns_error() {
     std::fs::write(&file_path, "data").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // Shelve the file normally.
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
-    // Simulate inconsistency: remove the symlink and put a regular file back,
-    // but leave the manifest entry in place.
+    // Simulate inconsistency: remove the symlink and put a regular file back, but leave the manifest entry in place.
     let store_path = ctx.repo_store.join("items/data.txt");
     std::fs::remove_file(&file_path).unwrap(); // remove symlink
     std::fs::copy(&store_path, &file_path).unwrap(); // restore regular file
 
-    // A second add on the regular file must fail with AlreadyManaged because
-    // the manifest still contains the entry.
-    let err = common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap_err();
+    // A second add on the regular file must fail with AlreadyManaged because the manifest still contains the entry.
+    let err = common::add_report(&mut ctx, &file_path, false, &ignore).unwrap_err();
     assert!(
         matches!(err, shelfbox_core::error::AppError::AlreadyManaged { .. }),
         "expected AlreadyManaged, got: {err}"
@@ -1878,10 +1789,9 @@ fn add_path_outside_repo_returns_error() {
     std::fs::write(&outside_file, "outside").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    let err = common::add_report(&mut ctx, &outside_file, false, &link, &ignore).unwrap_err();
+    let err = common::add_report(&mut ctx, &outside_file, false, &ignore).unwrap_err();
     assert!(
         matches!(err, shelfbox_core::error::AppError::PathOutsideRepo { .. }),
         "expected PathOutsideRepo, got: {err}"
@@ -1897,13 +1807,11 @@ fn restore_regular_file_returns_destination_exists_error() {
     std::fs::write(&file_path, "plain").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // A regular file (not a symlink) must return RestoreDestinationExists, not
     // NotManagedLink, so the user gets a precise error and a helpful hint.
-    let err =
-        common::restore(&mut ctx, &file_path, false, false, false, &link, &ignore).unwrap_err();
+    let err = common::restore(&mut ctx, &file_path, false, false, false, &ignore).unwrap_err();
     assert!(
         matches!(
             err,
@@ -1922,11 +1830,9 @@ fn restore_nonexistent_path_returns_not_managed_link_error() {
     let file_path = repo_dir.path().join("does_not_exist.txt");
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    let err =
-        common::restore(&mut ctx, &file_path, false, false, false, &link, &ignore).unwrap_err();
+    let err = common::restore(&mut ctx, &file_path, false, false, false, &ignore).unwrap_err();
     assert!(
         matches!(err, shelfbox_core::error::AppError::NotManagedLink { .. }),
         "expected NotManagedLink, got: {err}"
@@ -1947,14 +1853,13 @@ fn restore_keep_ignore_preserves_exclude_entry() {
     std::fs::write(&file_path, "export SECRET=1").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     assert!(ignore.has_entry(repo_dir.path(), "env.sh").unwrap());
 
     // Restore with keep_ignore=true.
-    common::restore(&mut ctx, &file_path, false, true, false, &link, &ignore).unwrap();
+    common::restore(&mut ctx, &file_path, false, true, false, &ignore).unwrap();
 
     // Entry must still be present.
     assert!(
@@ -1977,17 +1882,15 @@ fn restore_keep_store_leaves_symlink_and_store_item() {
     std::fs::write(&file_path, "keep me").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     let store_path = ctx.repo_store.join("items/keep/keep.txt");
     assert!(store_path.exists(), "store item must exist after add");
 
     // Restore with keep_store=true: item transitions to Detached state.
-    // The manifest entry is retained for ownership tracking; symlink and
-    // store item remain intact.
-    common::restore(&mut ctx, &file_path, false, false, true, &link, &ignore).unwrap();
+    // The manifest entry is retained for ownership tracking; symlink and store item remain intact.
+    common::restore(&mut ctx, &file_path, false, false, true, &ignore).unwrap();
 
     // Item must still be in the manifest, but in Detached state.
     assert_eq!(
@@ -2026,14 +1929,13 @@ fn restore_retains_an_equal_regular_copy_without_replacing_it() {
     let file_path = repo_dir.path().join("copy-restore.txt");
     std::fs::write(&file_path, "canonical").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     let store_path = ctx.repo_store.join("items/copy-restore.txt");
     std::fs::remove_file(&file_path).unwrap();
     std::fs::copy(&store_path, &file_path).unwrap();
 
-    common::restore(&mut ctx, &file_path, false, false, false, &link, &ignore).unwrap();
+    common::restore(&mut ctx, &file_path, false, false, false, &ignore).unwrap();
 
     assert!(!file_path
         .symlink_metadata()
@@ -2058,16 +1960,15 @@ fn restore_recovery_completes_from_the_staged_canonical_backup() {
     let file_path = repo_dir.path().join("recover-restore.txt");
     std::fs::write(&file_path, "canonical").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     let hook = failpoint::install_test_hook(|point| {
         if *point == Failpoint::OperationPhaseUpdated(OperationPhase::StoreStaged) {
             return Err(AppError::Internal("interrupt after store staging".into()));
         }
         Ok(())
     });
-    assert!(common::restore(&mut ctx, &file_path, false, false, false, &link, &ignore).is_err());
+    assert!(common::restore(&mut ctx, &file_path, false, false, false, &ignore).is_err());
     drop(hook);
     drop(ctx);
 
@@ -2095,9 +1996,8 @@ fn keep_store_failpoint_leaves_a_durable_detached_state() {
     std::fs::write(&file_path, "keep me").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     let hook = failpoint::install_test_hook(|point| {
         if *point == Failpoint::KeepStoreManifestSaved {
@@ -2106,7 +2006,7 @@ fn keep_store_failpoint_leaves_a_durable_detached_state() {
         Ok(())
     });
     assert!(matches!(
-        common::restore(&mut ctx, &file_path, false, false, true, &link, &ignore),
+        common::restore(&mut ctx, &file_path, false, false, true, &ignore),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -2141,14 +2041,13 @@ fn restore_keep_store_dry_run_reports_plan_and_makes_no_changes() {
     std::fs::write(&file_path, "keep me").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let report = common::restore(&mut ctx, &file_path, true, false, true, &link, &ignore).unwrap();
+    let report = common::restore(&mut ctx, &file_path, true, false, true, &ignore).unwrap();
 
     assert!(report.dry_run);
     assert_eq!(report.plan.path, "keep-dry-run.txt");
@@ -2175,11 +2074,10 @@ fn relink_dry_run_makes_no_changes() {
     std::fs::write(&file_path, "keep me detached").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
-    common::restore(&mut ctx, &file_path, false, false, true, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
+    common::restore(&mut ctx, &file_path, false, false, true, &ignore).unwrap();
     assert_eq!(
         ctx.manifest.items[0].ownership_state,
         store::manifest::OwnershipState::Detached
@@ -2188,7 +2086,7 @@ fn relink_dry_run_makes_no_changes() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let outcome = ops::relink::relink_report(&mut ctx, &file_path, true, &link).unwrap();
+    let outcome = ops::relink::relink_report(&mut ctx, &file_path, true).unwrap();
 
     assert_eq!(outcome.outcome, ops::relink::RelinkOutcome::WouldRelink);
     assert_eq!(
@@ -2223,10 +2121,9 @@ fn directional_relink_resolves_detached_diverged_copy_in_both_explicit_direction
         std::fs::write(&file_path, "canonical").unwrap();
         let mut ctx =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-        let link = DefaultLinkStrategy;
         let ignore = GitInfoExclude;
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
-        common::restore(&mut ctx, &file_path, false, false, true, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
+        common::restore(&mut ctx, &file_path, false, false, true, &ignore).unwrap();
         let store_path = ctx.repo_store.join(format!("items/{name}"));
         std::fs::remove_file(&file_path).unwrap();
         std::fs::copy(&store_path, &file_path).unwrap();
@@ -2265,10 +2162,9 @@ fn directional_relink_recovery_keeps_backup_until_attachment_is_durable() {
     let file_path = repo_dir.path().join("recover-relink.txt");
     std::fs::write(&file_path, "canonical").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
-    common::restore(&mut ctx, &file_path, false, false, true, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
+    common::restore(&mut ctx, &file_path, false, false, true, &ignore).unwrap();
     let store_path = ctx.repo_store.join("items/recover-relink.txt");
     std::fs::remove_file(&file_path).unwrap();
     std::fs::copy(&store_path, &file_path).unwrap();
@@ -2320,11 +2216,10 @@ fn directionless_relink_materialization_failpoint_is_retryable() {
     std::fs::write(&file_path, "retry me").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
-    common::restore(&mut ctx, &file_path, false, false, true, &link, &ignore).unwrap();
-    link.remove(&file_path).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
+    common::restore(&mut ctx, &file_path, false, false, true, &ignore).unwrap();
+    std::fs::remove_file(&file_path).unwrap();
 
     let hook = failpoint::install_test_hook(|point| {
         if *point == Failpoint::DirectionlessRelinkMaterialized {
@@ -2333,17 +2228,17 @@ fn directionless_relink_materialization_failpoint_is_retryable() {
         Ok(())
     });
     assert!(matches!(
-        ops::relink::relink_report(&mut ctx, &file_path, false, &link),
+        ops::relink::relink_report(&mut ctx, &file_path, false),
         Err(AppError::Internal(_))
     ));
     drop(hook);
 
-    assert!(link.is_managed_link(&file_path, store_dir.path()));
+    assert!(common::is_managed_symlink(&file_path, store_dir.path()));
     assert_eq!(
         ctx.manifest.items[0].ownership_state,
         store::manifest::OwnershipState::Detached
     );
-    let retry = ops::relink::relink_report(&mut ctx, &file_path, false, &link).unwrap();
+    let retry = ops::relink::relink_report(&mut ctx, &file_path, false).unwrap();
     assert_eq!(retry.outcome, ops::relink::RelinkOutcome::StateUpdated);
     assert_eq!(
         ctx.manifest.items[0].ownership_state,
@@ -2365,16 +2260,15 @@ fn doctor_finds_orphan_store_item() {
     std::fs::write(&file_path, "test").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // Shelve the file, then manually inject an orphan file into the store.
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     let orphan_path = ctx.items_dir().join("orphan_injected.txt");
     std::fs::write(&orphan_path, "orphan").unwrap();
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert_eq!(report.items.len(), 1);
     assert!(report.items[0].ok, "managed item must be reported as ok");
@@ -2388,10 +2282,9 @@ fn doctor_empty_repo_is_clean() {
     let store_dir = TempDir::new().unwrap();
 
     let ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert!(report.items.is_empty());
     assert!(report.orphan_store_items.is_empty());
@@ -2415,10 +2308,9 @@ fn add_tracked_file_returns_error() {
     common::run_git(repo_dir.path(), &["commit", "-m", "add tracked file"]);
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    let err = common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap_err();
+    let err = common::add_report(&mut ctx, &file_path, false, &ignore).unwrap_err();
     assert!(
         matches!(err, shelfbox_core::error::AppError::PathIsTracked { .. }),
         "expected PathIsTracked, got: {err}"
@@ -2434,10 +2326,9 @@ fn add_git_dir_path_returns_error() {
     let git_config = repo_dir.path().join(".git").join("config");
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    let err = common::add_report(&mut ctx, &git_config, false, &link, &ignore).unwrap_err();
+    let err = common::add_report(&mut ctx, &git_config, false, &ignore).unwrap_err();
     assert!(
         matches!(err, shelfbox_core::error::AppError::PathInsideGitDir { .. }),
         "expected PathInsideGitDir, got: {err}"
@@ -2459,10 +2350,9 @@ fn add_existing_symlink_returns_error() {
     common::create_file_symlink(&target, &link_path);
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    let err = common::add_report(&mut ctx, &link_path, false, &link, &ignore).unwrap_err();
+    let err = common::add_report(&mut ctx, &link_path, false, &ignore).unwrap_err();
     assert!(
         matches!(err, shelfbox_core::error::AppError::PathIsSymlink { .. }),
         "expected PathIsSymlink, got: {err}"
@@ -2483,16 +2373,15 @@ fn doctor_reports_error_for_dangling_symlink() {
     std::fs::write(&file_path, "secret").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Remove the store-side file to create a dangling symlink.
     let store_path = ctx.repo_store.join("items/secrets.txt");
     std::fs::remove_file(&store_path).unwrap();
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert_eq!(report.items.len(), 1);
     let s = &report.items[0];
@@ -2513,17 +2402,16 @@ fn doctor_reports_warn_for_missing_exclude_entry() {
     std::fs::write(&file_path, "private").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Manually remove the exclude entry to simulate a WARN condition.
     ignore
         .remove_entries(repo_dir.path(), &["private.txt"])
         .unwrap();
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert_eq!(report.items.len(), 1);
     let s = &report.items[0];
@@ -2550,10 +2438,9 @@ fn repair_recreates_missing_symlink() {
     std::fs::write(&file_path, "TOKEN=abc").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     assert!(file_path
         .symlink_metadata()
         .unwrap()
@@ -2565,7 +2452,7 @@ fn repair_recreates_missing_symlink() {
     std::fs::remove_dir(&parent).unwrap();
     assert!(!file_path.exists(), "symlink must be gone before repair");
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::LinkRecreated);
 
     // Symlink must be back and readable.
@@ -2582,9 +2469,7 @@ fn repair_rejects_wrong_target_symlink_without_force() {
     if !require_symlink_support() {
         return;
     }
-    // A symlink that points outside the managed store must NOT be silently
-    // overwritten.  repair() must return RepairSymlinkTargetMismatch so the
-    // user can investigate before running with --force.
+    // A symlink that points outside the managed store must NOT be silently overwritten.  repair() must return RepairSymlinkTargetMismatch so the user can investigate before running with --force.
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
 
@@ -2592,22 +2477,21 @@ fn repair_rejects_wrong_target_symlink_without_force() {
     std::fs::write(&file_path, "[db]").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Replace managed symlink with one pointing elsewhere (hand-modified).
     std::fs::remove_file(&file_path).unwrap();
     let bogus_target = repo_dir.path().join("missing-target-for-repair-test-1");
     common::create_file_symlink(&bogus_target, &file_path);
     assert!(
-        !link.is_managed_link(&file_path, &ctx.config.store),
+        !common::is_managed_symlink(&file_path, &ctx.config.store),
         "symlink must not be managed before the test"
     );
 
     // Without --force, repair must refuse.
-    let result = ops::repair::repair_report(&ctx, &file_path, &link, false, false);
+    let result = ops::repair::repair_report(&ctx, &file_path, false, false);
     assert!(
         matches!(
             result,
@@ -2618,7 +2502,7 @@ fn repair_rejects_wrong_target_symlink_without_force() {
 
     // The wrong-target symlink must be untouched.
     assert!(
-        !link.is_managed_link(&file_path, &ctx.config.store),
+        !common::is_managed_symlink(&file_path, &ctx.config.store),
         "wrong-target symlink must not have been changed"
     );
 }
@@ -2628,8 +2512,7 @@ fn repair_force_relinks_wrong_target_symlink() {
     if !require_symlink_support() {
         return;
     }
-    // With --force, repair must overwrite a wrong-target symlink and restore
-    // the correct link to the managed store item.
+    // With --force, repair must overwrite a wrong-target symlink and restore the correct link to the managed store item.
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
 
@@ -2637,20 +2520,19 @@ fn repair_force_relinks_wrong_target_symlink() {
     std::fs::write(&file_path, "[db]").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Replace managed symlink with one pointing elsewhere.
     std::fs::remove_file(&file_path).unwrap();
     let bogus_target = repo_dir.path().join("missing-target-for-repair-test-2");
     common::create_file_symlink(&bogus_target, &file_path);
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, true).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, false, true).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::LinkRecreated);
 
-    assert!(link.is_managed_link(&file_path, &ctx.config.store));
+    assert!(common::is_managed_symlink(&file_path, &ctx.config.store));
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "[db]");
 }
 
@@ -2666,12 +2548,11 @@ fn repair_already_healthy_returns_no_op() {
     std::fs::write(&file_path, "ok").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::AlreadyHealthy);
 }
 
@@ -2687,16 +2568,15 @@ fn repair_returns_store_missing_when_store_item_gone() {
     std::fs::write(&file_path, "secret").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Delete the store-side copy to simulate data loss.
     let store_item = ctx.repo_store.join("items/secrets.txt");
     std::fs::remove_file(&store_item).unwrap();
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::StoreMissing);
 
     // The (now dangling) symlink must be left untouched.
@@ -2718,9 +2598,8 @@ fn repair_returns_not_managed_for_unknown_path() {
     std::fs::write(&unmanaged, "not shelved").unwrap();
 
     let ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
 
-    let outcome = ops::repair::repair_report(&ctx, &unmanaged, &link, false, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &unmanaged, false, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::NotManaged);
 }
 
@@ -2736,10 +2615,9 @@ fn repair_leaves_diverged_regular_file_unchanged() {
     std::fs::write(&file_path, "original").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Remove the symlink and put a regular file back in its place.
     std::fs::remove_file(&file_path).unwrap();
@@ -2753,7 +2631,7 @@ fn repair_leaves_diverged_regular_file_unchanged() {
         "must be a regular file before the safety check"
     );
 
-    let result = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let result = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(result.outcome, ops::repair::RepairOutcome::CopyDiverged);
 
     // The user's file must be intact.
@@ -2775,15 +2653,14 @@ fn repair_dry_run_makes_no_changes() {
     std::fs::write(&file_path, "contents").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let outcome = ops::repair::repair_report(&ctx, &file_path, &link, true, false).unwrap();
+    let outcome = ops::repair::repair_report(&ctx, &file_path, true, false).unwrap();
     assert_eq!(outcome.outcome, ops::repair::RepairOutcome::LinkRecreated);
 
     // Symlink must NOT have been recreated in dry-run mode.
@@ -2802,16 +2679,15 @@ fn item_repair_refuses_a_missing_target_exclude_without_writing() {
     let file_path = repo_dir.path().join("repair-missing-exclude.txt");
     std::fs::write(&file_path, "secret").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     ignore
         .remove_entries(repo_dir.path(), &["repair-missing-exclude.txt"])
         .unwrap();
 
     assert!(matches!(
-        ops::repair::repair_report(&ctx, &file_path, &link, false, false),
+        ops::repair::repair_report(&ctx, &file_path, false, false),
         Err(AppError::Internal(message)) if message.contains("exclude is missing")
     ));
     assert!(file_path.symlink_metadata().is_err());
@@ -2835,14 +2711,13 @@ fn item_repair_copy_recreates_only_a_missing_materialization() {
     std::fs::create_dir(&parent).unwrap();
     std::fs::write(&file_path, "copy repair").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     std::fs::remove_dir(&parent).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    let report = ops::repair::repair_report(&ctx, &file_path, &link, false, false).unwrap();
+    let report = ops::repair::repair_report(&ctx, &file_path, false, false).unwrap();
     assert_eq!(report.outcome, ops::repair::RepairOutcome::LinkRecreated);
     assert!(!file_path
         .symlink_metadata()
@@ -2865,14 +2740,13 @@ fn item_repair_force_leaves_diverged_regular_content_unchanged() {
     let file_path = repo_dir.path().join("repair-force-regular.txt");
     std::fs::write(&file_path, "canonical").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     std::fs::write(&file_path, "user content").unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    let report = ops::repair::repair_report(&ctx, &file_path, &link, false, true).unwrap();
+    let report = ops::repair::repair_report(&ctx, &file_path, false, true).unwrap();
     assert_eq!(report.outcome, ops::repair::RepairOutcome::CopyDiverged);
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "user content");
 }
@@ -2887,9 +2761,8 @@ fn repo_repair_writes_target_exclude_before_copy_temp_creation() {
     let file_path = repo_dir.path().join("repo-repair-copy.txt");
     std::fs::write(&file_path, "repo repair copy").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     ignore
         .remove_entries(repo_dir.path(), &["repo-repair-copy.txt"])
@@ -2912,7 +2785,7 @@ fn repo_repair_writes_target_exclude_before_copy_temp_creation() {
         Ok(())
     });
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     drop(hook);
     assert!(observed.get());
     assert_eq!(
@@ -2936,14 +2809,12 @@ fn repo_repair_detached_missing_origin_preserves_but_does_not_add_exclude() {
     let file_path = repo_dir.path().join("detached-repair.txt");
     std::fs::write(&file_path, "detached").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
-    common::restore(&mut ctx, &file_path, false, false, true, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
+    common::restore(&mut ctx, &file_path, false, false, true, &ignore).unwrap();
 
-    // A detached item whose origin still has an index entry is included in
-    // repo repair's desired exclude set, while its materialization stays off.
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    // A detached item whose origin still has an index entry is included in repo repair's desired exclude set, while its materialization stays off.
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert!(ignore
         .has_entry(repo_dir.path(), "detached-repair.txt")
         .unwrap());
@@ -2954,7 +2825,7 @@ fn repo_repair_detached_missing_origin_preserves_but_does_not_add_exclude() {
         .remove_entries(repo_dir.path(), &["detached-repair.txt"])
         .unwrap();
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert!(!ignore
         .has_entry(repo_dir.path(), "detached-repair.txt")
         .unwrap());
@@ -2962,7 +2833,7 @@ fn repo_repair_detached_missing_origin_preserves_but_does_not_add_exclude() {
     ignore
         .add_entries(repo_dir.path(), &["detached-repair.txt"])
         .unwrap();
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert!(ignore
         .has_entry(repo_dir.path(), "detached-repair.txt")
         .unwrap());
@@ -2978,9 +2849,8 @@ fn repo_repair_inspection_failure_does_not_rewrite_excludes() {
     let file_path = repo_dir.path().join("unsafe-store-entry.txt");
     std::fs::write(&file_path, "safe").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     ignore
         .remove_entries(repo_dir.path(), &["unsafe-store-entry.txt"])
         .unwrap();
@@ -2990,7 +2860,7 @@ fn repo_repair_inspection_failure_does_not_rewrite_excludes() {
     let exclude_path = crate::git::exclude::exclude_file_path(repo_dir.path()).unwrap();
     let exclude_before = std::fs::read_to_string(&exclude_path).unwrap();
 
-    assert!(ops::repair::repair_repo(&mut ctx, &link, false, false).is_err());
+    assert!(ops::repair::repair_repo(&mut ctx, false, false).is_err());
     assert_eq!(
         std::fs::read_to_string(exclude_path).unwrap(),
         exclude_before
@@ -3010,14 +2880,13 @@ fn repo_repair_leaves_diverged_regular_content_unchanged() {
     let file_path = repo_dir.path().join("repo-diverged-copy.txt");
     std::fs::write(&file_path, "canonical").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     std::fs::write(&file_path, "user content").unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, true).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, true).unwrap();
     assert!(report.symlinks_failed.is_empty());
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "user content");
 }
@@ -3034,15 +2903,14 @@ fn repo_repair_is_idempotent_for_mixed_symlink_and_copy_materializations() {
     std::fs::write(&link_path, "link").unwrap();
     std::fs::write(&copy_path, "copy").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &link_path, false, &link, &ignore).unwrap();
-    common::add_report(&mut ctx, &copy_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &link_path, false, &ignore).unwrap();
+    common::add_report(&mut ctx, &copy_path, false, &ignore).unwrap();
     std::fs::remove_file(&copy_path).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
-    assert!(link.is_managed_link(&link_path, &ctx.config.store));
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
+    assert!(common::is_managed_symlink(&link_path, &ctx.config.store));
     assert!(!copy_path
         .symlink_metadata()
         .unwrap()
@@ -3051,7 +2919,7 @@ fn repo_repair_is_idempotent_for_mixed_symlink_and_copy_materializations() {
     let repo_after_first = common::snapshot_tree(repo_dir.path());
     let store_after_first = common::snapshot_tree(store_dir.path());
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert_eq!(common::snapshot_tree(repo_dir.path()), repo_after_first);
     assert_eq!(common::snapshot_tree(store_dir.path()), store_after_first);
 }
@@ -3066,16 +2934,15 @@ fn repo_repair_refuses_malformed_managed_exclude_without_writing() {
     let file_path = repo_dir.path().join("malformed-exclude.txt");
     std::fs::write(&file_path, "safe").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     let exclude_path = crate::git::exclude::exclude_file_path(repo_dir.path()).unwrap();
     let malformed = "# BEGIN shelfbox\nmalformed-exclude.txt\n";
     std::fs::write(&exclude_path, malformed).unwrap();
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    assert!(ops::repair::repair_repo(&mut ctx, &link, false, false).is_err());
+    assert!(ops::repair::repair_repo(&mut ctx, false, false).is_err());
     assert_eq!(std::fs::read_to_string(&exclude_path).unwrap(), malformed);
     assert_eq!(common::snapshot_tree(repo_dir.path()), repo_before);
     assert_eq!(common::snapshot_tree(store_dir.path()), store_before);
@@ -3091,9 +2958,8 @@ fn interrupted_copy_repo_repair_is_cleaned_and_retryable() {
     let file_path = repo_dir.path().join("interrupted-repair-copy.txt");
     std::fs::write(&file_path, "retry repair").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     ignore
         .remove_entries(repo_dir.path(), &["interrupted-repair-copy.txt"])
@@ -3109,7 +2975,7 @@ fn interrupted_copy_repo_repair_is_cleaned_and_retryable() {
         }
         Ok(())
     });
-    let interrupted = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let interrupted = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert_eq!(interrupted.symlinks_failed.len(), 1);
     assert!(!operation_record_store::load_all(store_dir.path())
         .unwrap()
@@ -3123,7 +2989,7 @@ fn interrupted_copy_repo_repair_is_cleaned_and_retryable() {
         .unwrap()
         .is_empty());
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "retry repair");
-    ops::repair::repair_repo(&mut recovered, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut recovered, false, false).unwrap();
 }
 
 #[test]
@@ -3136,9 +3002,8 @@ fn interrupted_repo_repair_after_target_exclude_update_is_retryable() {
     let file_path = repo_dir.path().join("interrupted-repair-exclude.txt");
     std::fs::write(&file_path, "retry exclude").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     ignore
         .remove_entries(repo_dir.path(), &["interrupted-repair-exclude.txt"])
@@ -3152,7 +3017,7 @@ fn interrupted_repo_repair_after_target_exclude_update_is_retryable() {
     });
 
     assert!(matches!(
-        ops::repair::repair_repo(&mut ctx, &link, false, false),
+        ops::repair::repair_repo(&mut ctx, false, false),
         Err(AppError::Internal(_))
     ));
     drop(hook);
@@ -3163,7 +3028,7 @@ fn interrupted_repo_repair_after_target_exclude_update_is_retryable() {
         .unwrap()
         .is_empty());
 
-    ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     assert_eq!(
         std::fs::read_to_string(&file_path).unwrap(),
         "retry exclude"
@@ -3182,9 +3047,8 @@ fn copy_repo_repair_dry_run_creates_no_records_or_files() {
     std::fs::create_dir(&parent).unwrap();
     std::fs::write(&file_path, "dry copy").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(&file_path).unwrap();
     std::fs::remove_dir(&parent).unwrap();
     ignore
@@ -3194,7 +3058,7 @@ fn copy_repo_repair_dry_run_creates_no_records_or_files() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, true, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, true, false).unwrap();
     assert!(matches!(
         report.plan.symlink_actions.as_slice(),
         [RepoRepairSymlinkAction::CreateCopy { path, .. }] if path == "nested/dry-copy-repair.txt"
@@ -3219,19 +3083,18 @@ fn repo_repair_recreates_broken_symlinks() {
     std::fs::write(&file_path, "TOKEN=repo").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     std::fs::remove_file(&file_path).unwrap();
     assert!(file_path.symlink_metadata().is_err());
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 1);
     assert_eq!(report.symlinks_already_healthy, 0);
     assert!(report.symlinks_failed.is_empty());
-    assert!(link.is_managed_link(&file_path, &ctx.config.store));
+    assert!(common::is_managed_symlink(&file_path, &ctx.config.store));
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "TOKEN=repo");
 }
 
@@ -3248,19 +3111,18 @@ fn repo_repair_recreates_symlink_when_parent_directory_is_missing() {
     std::fs::write(&file_path, "TOKEN=repo").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     std::fs::remove_file(&file_path).unwrap();
     std::fs::remove_dir(&parent).unwrap();
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 1);
     assert!(report.symlinks_failed.is_empty());
     assert!(parent.is_dir());
-    assert!(link.is_managed_link(&file_path, &ctx.config.store));
+    assert!(common::is_managed_symlink(&file_path, &ctx.config.store));
     assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "TOKEN=repo");
 }
 
@@ -3277,15 +3139,14 @@ fn repo_repair_recreates_copy_when_parent_directory_is_missing() {
     std::fs::write(&file_path, "copy repair").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     ctx.config.materialization = MaterializationStrategy::Copy;
 
     std::fs::remove_file(&file_path).unwrap();
     std::fs::remove_dir(&parent).unwrap();
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 1);
     assert!(report.symlinks_failed.is_empty());
@@ -3316,10 +3177,9 @@ fn repo_repair_failure_after_parent_creation_keeps_created_parents() {
     std::fs::write(&unrelated, "TOKEN=unrelated").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
-    common::add_report(&mut ctx, &unrelated, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
+    common::add_report(&mut ctx, &unrelated, false, &ignore).unwrap();
     let item = ctx.manifest.get("nested/deep/repo-secret.env").unwrap();
     let store_path = ctx.repo_store.join(&item.store_path);
     let store_content = std::fs::read_to_string(&store_path).unwrap();
@@ -3335,7 +3195,7 @@ fn repo_repair_failure_after_parent_creation_keeps_created_parents() {
         Ok(())
     });
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     drop(hook);
 
     assert_eq!(report.symlinks_repaired, 0);
@@ -3350,7 +3210,7 @@ fn repo_repair_failure_after_parent_creation_keeps_created_parents() {
             .ownership_state,
         OwnershipState::Attached
     );
-    assert!(link.is_managed_link(&unrelated, &ctx.config.store));
+    assert!(common::is_managed_symlink(&unrelated, &ctx.config.store));
     assert_eq!(
         std::fs::read_to_string(&unrelated).unwrap(),
         "TOKEN=unrelated"
@@ -3372,13 +3232,12 @@ fn repo_repair_reports_healthy_symlinks_without_relinking() {
     std::fs::write(&file_path, "ok").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
-    let target_before = link.read_target(&file_path).unwrap();
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
-    let target_after = link.read_target(&file_path).unwrap();
+    let target_before = std::fs::read_link(&file_path).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
+    let target_after = std::fs::read_link(&file_path).unwrap();
 
     assert_eq!(report.symlinks_repaired, 0);
     assert_eq!(report.symlinks_already_healthy, 1);
@@ -3398,12 +3257,11 @@ fn repo_repair_reports_missing_store_file_as_nonfatal_failure() {
     std::fs::write(&file_path, "lost").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     std::fs::remove_file(ctx.repo_store.join("items/lost-repo.txt")).unwrap();
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 0);
     assert_eq!(report.symlinks_already_healthy, 0);
@@ -3428,9 +3286,8 @@ fn repo_repair_updates_index_and_identity_hints() {
     std::fs::write(&file_path, "portable").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     common::run_git(
         repo_dir.path(),
         &[
@@ -3448,7 +3305,7 @@ fn repo_repair_updates_index_and_identity_hints() {
     idx.upsert(&ctx.repo_id, entry);
     store::index::save(store_dir.path(), &idx).unwrap();
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, false, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, false, false).unwrap();
     let current = context::current_git_context(repo_dir.path()).unwrap();
     let idx = store::index::load(store_dir.path()).unwrap();
     let entry = idx.get(&ctx.repo_id).unwrap();
@@ -3481,15 +3338,14 @@ fn repo_repair_requires_existing_repoid_without_creating_one() {
     std::fs::write(&file_path, "data").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     let mut idx = store::index::load(store_dir.path()).unwrap();
     assert!(idx.remove(&ctx.repo_id));
     store::index::save(store_dir.path(), &idx).unwrap();
 
-    let result = ops::repair::repair_repo(&mut ctx, &link, false, false);
+    let result = ops::repair::repair_repo(&mut ctx, false, false);
     let idx_after = store::index::load(store_dir.path()).unwrap();
 
     assert!(result.is_err());
@@ -3508,9 +3364,8 @@ fn repo_repair_dry_run_makes_no_file_writes() {
     std::fs::write(&file_path, "dry").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     common::run_git(
         repo_dir.path(),
         &[
@@ -3541,7 +3396,7 @@ fn repo_repair_dry_run_makes_no_file_writes() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let report = ops::repair::repair_repo(&mut ctx, &link, true, false).unwrap();
+    let report = ops::repair::repair_repo(&mut ctx, true, false).unwrap();
 
     assert_eq!(report.symlinks_repaired, 1);
     assert!(report.exclude_updated);
@@ -3581,10 +3436,9 @@ fn doctor_fix_repairs_missing_exclude_entry() {
     std::fs::write(&file_path, "SECRET=1").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Manually remove the exclude entry to simulate the broken state.
     let exclude_path = repo_dir.path().join(".git/info/exclude");
@@ -3602,7 +3456,7 @@ fn doctor_fix_repairs_missing_exclude_entry() {
         "exclude entry must be absent before fix"
     );
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     // At least one Fixed action must be present.
     assert!(
@@ -3634,15 +3488,14 @@ fn doctor_fix_repairs_missing_symlink() {
     std::fs::write(&file_path, "data").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Remove the symlink to simulate the broken state.
     std::fs::remove_file(&file_path).unwrap();
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     assert!(
         report
@@ -3674,15 +3527,14 @@ fn doctor_fix_records_cannot_fix_for_store_missing() {
     std::fs::write(&file_path, "lost data").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Delete the store-side copy to simulate data loss.
     std::fs::remove_file(ctx.repo_store.join("items/lost.txt")).unwrap();
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     assert!(
         report
@@ -3708,7 +3560,6 @@ fn doctor_fix_true_orphan_is_reported_without_deletion() {
     let store_dir = TempDir::new().unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // Inject a bare orphan: store item exists but no symlink in the repo.
@@ -3716,7 +3567,7 @@ fn doctor_fix_true_orphan_is_reported_without_deletion() {
     std::fs::create_dir_all(ctx.items_dir()).unwrap();
     std::fs::write(&orphan_path, "orphan").unwrap();
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     assert!(
         report
@@ -3742,20 +3593,18 @@ fn doctor_fix_true_orphan_not_deleted_with_yes() {
     if !require_symlink_support() {
         return;
     }
-    // Even with --yes, a store item with no repo-side symlink is not deleted
-    // unless a manifest explicitly marks it `orphaned` for store gc.
+    // Even with --yes, a store item with no repo-side symlink is not deleted unless a manifest explicitly marks it `orphaned` for store gc.
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     let orphan_path = ctx.items_dir().join("bare_orphan_yes.txt");
     std::fs::create_dir_all(ctx.items_dir()).unwrap();
     std::fs::write(&orphan_path, "orphan").unwrap();
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     assert!(
         report
@@ -3782,10 +3631,9 @@ fn doctor_fix_dry_run_makes_no_changes() {
     std::fs::write(&file_path, "contents").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Remove both the symlink and the exclude entry to create a dirty state.
     std::fs::remove_file(&file_path).unwrap();
@@ -3800,7 +3648,7 @@ fn doctor_fix_dry_run_makes_no_changes() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, true).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, true).unwrap();
 
     // dry-run must report what it would do.
     assert!(
@@ -3837,9 +3685,8 @@ fn doctor_fix_rebuilds_manifest_when_missing() {
         std::fs::write(&file_path, name).unwrap();
         let mut ctx =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-        let link = DefaultLinkStrategy;
         let ignore = GitInfoExclude;
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     }
 
     // Delete the manifest to simulate complete manifest loss.
@@ -3858,9 +3705,8 @@ fn doctor_fix_rebuilds_manifest_when_missing() {
         0,
         "manifest must be empty after deletion"
     );
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     // A Fixed action must be present for the rebuild.
     assert!(
@@ -3901,14 +3747,12 @@ fn doctor_fix_rebuilt_manifest_produces_healthy_status() {
     {
         let mut ctx =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-        let link = DefaultLinkStrategy;
         let ignore = GitInfoExclude;
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     }
 
     // Delete only the manifest; the symlink at the repo path remains intact.
-    // This simulates manifest loss while the shelved item is still accessible
-    // via its symlink — the canonical scenario for manifest reconstruction.
+    // This simulates manifest loss while the shelved item is still accessible via its symlink — the canonical scenario for manifest reconstruction.
     {
         let ctx_check =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
@@ -3917,12 +3761,11 @@ fn doctor_fix_rebuilt_manifest_produces_healthy_status() {
 
     // doctor --fix --yes should rebuild the manifest (symlink exists → rebuild candidate).
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     // Status must be healthy.
-    let statuses = ops::status::status(&ctx, &link, &ignore).unwrap();
+    let statuses = ops::status::status(&ctx, &common::materializer(&ctx), &ignore).unwrap();
     assert_eq!(statuses.len(), 1);
     assert!(
         statuses[0].link_valid,
@@ -3945,9 +3788,8 @@ fn doctor_fix_rebuilds_only_missing_items_when_partial() {
         std::fs::write(&file_path, name).unwrap();
         let mut ctx =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-        let link = DefaultLinkStrategy;
         let ignore = GitInfoExclude;
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     }
 
     // Remove only partial_b from the manifest by rewriting it with just partial_a.
@@ -3965,9 +3807,8 @@ fn doctor_fix_rebuilds_only_missing_items_when_partial() {
         1,
         "only partial_a should be in manifest before fix"
     );
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     assert_eq!(
         ctx.manifest.items.len(),
@@ -3989,10 +3830,7 @@ fn doctor_fix_mixed_rebuild_candidate_and_true_orphan() {
     if !require_symlink_support() {
         return;
     }
-    // Scenario: one store item has a valid symlink (rebuild candidate) and
-    // another has no symlink (unclassified store data). Without --yes,
-    // doctor --fix must report the rebuild candidate as needing confirmation,
-    // skip the unclassified item, and not modify the manifest or delete data.
+    // Scenario: one store item has a valid symlink (rebuild candidate) and another has no symlink (unclassified store data). Without --yes, doctor --fix must report the rebuild candidate as needing confirmation, skip the unclassified item, and not modify the manifest or delete data.
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
 
@@ -4002,9 +3840,8 @@ fn doctor_fix_mixed_rebuild_candidate_and_true_orphan() {
     {
         let mut ctx =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-        let link = DefaultLinkStrategy;
         let ignore = GitInfoExclude;
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     }
 
     // Simulate manifest loss (symlink remains).
@@ -4019,9 +3856,8 @@ fn doctor_fix_mixed_rebuild_candidate_and_true_orphan() {
     let orphan_path = ctx.items_dir().join("bare_mixed_orphan.txt");
     std::fs::write(&orphan_path, "orphan").unwrap();
 
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     // Neither item must be absorbed into the manifest without --yes.
     assert!(
@@ -4072,9 +3908,8 @@ fn doctor_fix_rebuild_dry_run_does_not_persist() {
     {
         let mut ctx =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-        let link = DefaultLinkStrategy;
         let ignore = GitInfoExclude;
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     }
 
     // Delete manifest to force rebuild path.
@@ -4087,12 +3922,11 @@ fn doctor_fix_rebuild_dry_run_does_not_persist() {
     }; // write lock released here
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
     // yes=true so rebuild is attempted; dry_run=true so nothing is written.
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, true, true).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, true, true).unwrap();
 
     // Report must still mention the planned action.
     assert!(
@@ -4124,9 +3958,7 @@ fn doctor_fix_wrong_target_symlink_is_not_a_rebuild_candidate() {
     if !require_symlink_support() {
         return;
     }
-    // A symlink at the expected repo-relative path that points to the WRONG
-    // store location must NOT be absorbed as a rebuild candidate.  Only a
-    // symlink whose target matches `<repo_store>/items/<path>` is valid.
+    // A symlink at the expected repo-relative path that points to the WRONG store location must NOT be absorbed as a rebuild candidate.  Only a symlink whose target matches `<repo_store>/items/<path>` is valid.
     let repo_dir = common::init_git_repo();
     let store_dir = TempDir::new().unwrap();
     let other_dir = TempDir::new().unwrap();
@@ -4138,14 +3970,11 @@ fn doctor_fix_wrong_target_symlink_is_not_a_rebuild_candidate() {
     {
         let mut ctx =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-        let link = DefaultLinkStrategy;
         let ignore = GitInfoExclude;
-        common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+        common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
     }
 
-    // Delete manifest and replace the repo-side symlink with one that points
-    // to a different location (simulating a stale symlink from a re-clone or
-    // another tool).
+    // Delete manifest and replace the repo-side symlink with one that points to a different location (simulating a stale symlink from a re-clone or another tool).
     {
         let ctx_check =
             context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
@@ -4158,12 +3987,10 @@ fn doctor_fix_wrong_target_symlink_is_not_a_rebuild_candidate() {
     std::fs::write(&decoy_target, "unrelated").unwrap();
     common::create_file_symlink(&decoy_target, &file_path);
 
-    // doctor --fix --yes: the store item has no manifest entry AND no correct
-    // symlink, so it must be treated as an orphan, not a rebuild candidate.
+    // doctor --fix --yes: the store item has no manifest entry AND no correct symlink, so it must be treated as an orphan, not a rebuild candidate.
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     // The item must NOT have been added to the manifest via rebuild.
     assert!(
@@ -4186,10 +4013,9 @@ fn move_item_renames_store_and_updates_symlink() {
     std::fs::write(&old_path, "file content").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &old_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &old_path, false, &ignore).unwrap();
     assert!(old_path
         .symlink_metadata()
         .unwrap()
@@ -4198,7 +4024,7 @@ fn move_item_renames_store_and_updates_symlink() {
 
     // Move to a subdirectory to also test parent directory creation.
     let new_path = repo_dir.path().join("subdir/new.txt");
-    ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &link, &ignore).unwrap();
+    ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &ignore).unwrap();
 
     // Old symlink must be gone.
     assert!(!old_path.exists(), "old symlink must be removed");
@@ -4258,14 +4084,13 @@ fn move_preserves_an_observed_equal_regular_copy() {
     let new_path = repo_dir.path().join("nested/copy-new.txt");
     std::fs::write(&old_path, "canonical").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &old_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &old_path, false, &ignore).unwrap();
     let old_store = ctx.repo_store.join("items/copy-old.txt");
     std::fs::remove_file(&old_path).unwrap();
     std::fs::copy(&old_store, &old_path).unwrap();
 
-    ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &link, &ignore).unwrap();
+    ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &ignore).unwrap();
 
     assert!(!new_path
         .symlink_metadata()
@@ -4291,23 +4116,23 @@ fn move_recovery_completes_after_canonical_transfer() {
     let new_path = repo_dir.path().join("recover/move-new.txt");
     std::fs::write(&old_path, "canonical").unwrap();
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    common::add_report(&mut ctx, &old_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &old_path, false, &ignore).unwrap();
     let hook = failpoint::install_test_hook(|point| {
         if *point == Failpoint::OperationPhaseUpdated(OperationPhase::StoreTransferred) {
             return Err(AppError::Internal("interrupt after store move".into()));
         }
         Ok(())
     });
-    assert!(
-        ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &link, &ignore).is_err()
-    );
+    assert!(ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &ignore).is_err());
     drop(hook);
     drop(ctx);
 
     let recovered = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    assert!(DefaultLinkStrategy.is_managed_link(&new_path, &recovered.config.store));
+    assert!(common::is_managed_symlink(
+        &new_path,
+        &recovered.config.store
+    ));
     assert!(!old_path.exists());
     assert!(recovered.manifest.contains("recover/move-new.txt"));
     assert!(operation_record_store::load_all(&recovered.config.store)
@@ -4331,13 +4156,12 @@ fn move_item_rejects_when_destination_exists() {
     std::fs::write(&new_path, "already here").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &old_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &old_path, false, &ignore).unwrap();
 
-    let err = ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &link, &ignore)
-        .unwrap_err();
+    let err =
+        ops::move_item::move_item(&mut ctx, &old_path, &new_path, false, &ignore).unwrap_err();
     assert!(
         matches!(
             err,
@@ -4365,15 +4189,13 @@ fn move_item_rejects_when_new_path_already_managed() {
     std::fs::write(&file_b, "bbb").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_a, false, &link, &ignore).unwrap();
-    common::add_report(&mut ctx, &file_b, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_a, false, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_b, false, &ignore).unwrap();
 
     // Attempt to move a.txt → b.txt where b.txt is already managed.
-    let err =
-        ops::move_item::move_item(&mut ctx, &file_a, &file_b, false, &link, &ignore).unwrap_err();
+    let err = ops::move_item::move_item(&mut ctx, &file_a, &file_b, false, &ignore).unwrap_err();
     assert!(
         matches!(err, shelfbox_core::error::AppError::AlreadyManaged { .. }),
         "expected AlreadyManaged, got: {err}"
@@ -4396,10 +4218,9 @@ fn move_item_rejects_when_symlink_mismatch() {
     std::fs::write(&file_path, "secret").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &file_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &file_path, false, &ignore).unwrap();
 
     // Replace the managed symlink with one pointing elsewhere.
     std::fs::remove_file(&file_path).unwrap();
@@ -4407,8 +4228,8 @@ fn move_item_rejects_when_symlink_mismatch() {
     common::create_file_symlink(&bogus_target, &file_path);
 
     let new_path = repo_dir.path().join("secret_renamed.txt");
-    let err = ops::move_item::move_item(&mut ctx, &file_path, &new_path, false, &link, &ignore)
-        .unwrap_err();
+    let err =
+        ops::move_item::move_item(&mut ctx, &file_path, &new_path, false, &ignore).unwrap_err();
     assert!(
         matches!(
             err,
@@ -4433,16 +4254,14 @@ fn move_item_dry_run_makes_no_changes() {
     std::fs::write(&old_path, "data").unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    common::add_report(&mut ctx, &old_path, false, &link, &ignore).unwrap();
+    common::add_report(&mut ctx, &old_path, false, &ignore).unwrap();
 
     let new_path = repo_dir.path().join("renamed.txt");
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
-    let report =
-        ops::move_item::move_item(&mut ctx, &old_path, &new_path, true, &link, &ignore).unwrap();
+    let report = ops::move_item::move_item(&mut ctx, &old_path, &new_path, true, &ignore).unwrap();
     assert!(report.dry_run);
     assert!(report.warnings.is_empty());
     assert_eq!(report.plan.old_path, "original.txt");
