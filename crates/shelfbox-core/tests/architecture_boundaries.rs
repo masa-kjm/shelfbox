@@ -10,16 +10,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const LEGACY_LINK_STRATEGY_FILES: &[&str] = &[
+const LEGACY_LINK_STRATEGY_FILES: &[&str] = &["move_item.rs", "relink.rs"];
+
+const MIGRATED_OPERATION_PORT_FILES: &[&str] = &[
+    "add.rs",
     "info.rs",
     "integrity.rs",
-    "move_item.rs",
-    "relink.rs",
-    "repair.rs",
+    "restore.rs",
     "status.rs",
 ];
-
-const MIGRATED_OPERATION_PORT_FILES: &[&str] = &["add.rs", "restore.rs"];
 
 const LEGACY_DIRECT_FILESYSTEM_ALLOWLIST: &[(&str, &[&str])] = &[
     ("std::fs::copy(", &["move_item.rs"]),
@@ -29,7 +28,7 @@ const LEGACY_DIRECT_FILESYSTEM_ALLOWLIST: &[(&str, &[&str])] = &[
     ),
     ("std::fs::remove_file(", &["gc.rs", "move_item.rs"]),
     ("std::fs::remove_dir_all(", &["gc.rs"]),
-    ("fs::read_link(", &["info.rs", "integrity.rs"]),
+    ("fs::read_link(", &["integrity.rs"]),
 ];
 
 #[test]
@@ -41,12 +40,10 @@ fn production_operations_cannot_gain_low_level_materialization_dependencies() {
         .map(|(_, source)| count(source, "LinkStrategy"))
         .sum::<usize>();
 
-    // The eight pre-D6 symlink-only modules use 30 references. The ceiling
-    // allows migration to reduce the count but prevents new direct imports or
-    // uses from entering this transitional branch.
+    // The two remaining legacy operations use four references. The ceiling allows migration to reduce the count but prevents new direct imports or uses from entering this transitional branch.
     assert!(
-        link_strategy_references <= 30,
-        "D6 migration boundary permits at most the pre-existing 30 LinkStrategy references; use Materializer instead"
+        link_strategy_references <= 4,
+        "D6 migration boundary permits at most the remaining four LinkStrategy references; use Materializer instead"
     );
 
     for (path, source) in &sources {

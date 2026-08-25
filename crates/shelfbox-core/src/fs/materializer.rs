@@ -98,6 +98,10 @@ pub(crate) struct MaterializationFacts {
     pub store_regular: bool,
     pub store_hardlink_free: bool,
     pub copy_content: CopyContentState,
+    /// Immediate target reported by the repository-side symlink/reparse point.
+    ///
+    /// This preserves the target spelling for diagnostics. Operations may report it, but must not use it to choose a mutation destination.
+    pub symlink_target: Option<PathBuf>,
     /// Absolute resolved target for an unmanaged symlink/reparse point.
     /// Operations may report it, but never use it to perform replacement.
     pub unmanaged_symlink_target: Option<PathBuf>,
@@ -116,6 +120,7 @@ impl fmt::Debug for MaterializationFacts {
             .field("store_regular", &self.store_regular)
             .field("store_hardlink_free", &self.store_hardlink_free)
             .field("copy_content", &self.copy_content)
+            .field("symlink_target", &self.symlink_target)
             .field("unmanaged_symlink_target", &self.unmanaged_symlink_target)
             .field("snapshot", &"opaque")
             .finish()
@@ -153,6 +158,7 @@ impl MaterializationFacts {
             store_regular: true,
             store_hardlink_free: true,
             copy_content: CopyContentState::NotCompared,
+            symlink_target: None,
             unmanaged_symlink_target: None,
             snapshot: InspectionSnapshot::for_test(1),
         }
@@ -700,6 +706,7 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
                     store_regular,
                     store_hardlink_free,
                     copy_content: CopyContentState::NotCompared,
+                    symlink_target: None,
                     unmanaged_symlink_target: None,
                     snapshot: InspectionSnapshot::from_entry(None),
                 });
@@ -707,19 +714,23 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
             Err(error) => return Err(error),
         };
 
-        let (repo_entry_kind, unmanaged_symlink_target) = match entry.kind {
-            platform::EntryKind::RegularFile => (RepoEntryKind::RegularFile, None),
-            platform::EntryKind::Directory => (RepoEntryKind::Directory, None),
-            platform::EntryKind::Other => (RepoEntryKind::Other, None),
+        let (repo_entry_kind, symlink_target, unmanaged_symlink_target) = match entry.kind {
+            platform::EntryKind::RegularFile => (RepoEntryKind::RegularFile, None, None),
+            platform::EntryKind::Directory => (RepoEntryKind::Directory, None, None),
+            platform::EntryKind::Other => (RepoEntryKind::Other, None, None),
             platform::EntryKind::SymlinkOrReparsePoint => {
-                let target = self.inspect_link_target(&repo)?;
+                let (symlink_target, target) = self.inspect_link_target(&repo)?;
                 // Both paths were containment-checked before this method is
                 // called. Canonicalization accepts an expected relative link
                 // without exposing platform-specific link mechanics to ops.
                 if target.canonicalize().ok() == store.canonicalize().ok() {
-                    (RepoEntryKind::ManagedSymlink, None)
+                    (RepoEntryKind::ManagedSymlink, Some(symlink_target), None)
                 } else {
-                    (RepoEntryKind::UnmanagedSymlinkOrReparsePoint, Some(target))
+                    (
+                        RepoEntryKind::UnmanagedSymlinkOrReparsePoint,
+                        Some(symlink_target),
+                        Some(target),
+                    )
                 }
             }
         };
@@ -744,19 +755,23 @@ impl<L: LinkStrategy> DefaultMaterializer<L> {
             store_regular,
             store_hardlink_free,
             copy_content,
+            symlink_target,
             unmanaged_symlink_target,
             snapshot: InspectionSnapshot::from_entry(Some(entry)),
         })
     }
 
-    fn inspect_link_target(&self, link_path: &Path) -> Result<PathBuf> {
-        let target = self.link.read_target(link_path)?;
-        let target = if target.is_absolute() {
-            target
+    fn inspect_link_target(&self, link_path: &Path) -> Result<(PathBuf, PathBuf)> {
+        let symlink_target = self.link.read_target(link_path)?;
+        let resolved_target = if symlink_target.is_absolute() {
+            symlink_target.clone()
         } else {
-            link_path.parent().unwrap_or(&self.repo_root).join(target)
+            link_path
+                .parent()
+                .unwrap_or(&self.repo_root)
+                .join(&symlink_target)
         };
-        Ok(target)
+        Ok((symlink_target, resolved_target))
     }
 
     fn execute(&self, action: MaterializationAction) -> Result<MaterializationCommitOutcome> {

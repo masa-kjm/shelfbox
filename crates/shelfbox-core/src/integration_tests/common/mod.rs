@@ -22,6 +22,12 @@ use crate::{
     plan::{item_add::ItemAddReport, item_restore::ItemRestoreReport},
 };
 
+/// Constructs the production materializer for read-only repository inspections.
+#[allow(dead_code)]
+pub fn materializer(ctx: &RepoContext) -> DefaultMaterializer {
+    DefaultMaterializer::new(ctx.repo_root.clone(), ctx.repo_store.clone())
+}
+
 /// Invokes the add operation with concrete ports while preserving legacy test
 /// control over the link adapter.
 #[allow(dead_code)]

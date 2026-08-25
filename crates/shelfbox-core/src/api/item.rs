@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 pub use crate::{
     context::{ReadOnlyRepoContext, RepoContext},
@@ -40,11 +40,11 @@ use crate::{
         canonical_transfer::DefaultCanonicalTransfer, materializer::DefaultMaterializer,
         DefaultLinkStrategy,
     },
-    git::exclude::{GitInfoExclude, GitInfoExcludeSession, IgnoreBackend},
+    git::exclude::{GitInfoExclude, GitInfoExcludeSession},
     ops::{
         add, info as info_ops, list as list_ops, materialize as materialize_ops,
-        move_item as move_item_ops, path as path_ops, relink as relink_ops, repair as repair_ops,
-        restore, status as status_ops, sync as sync_ops,
+        move_item as move_item_ops, relink as relink_ops, repair as repair_ops, restore,
+        status as status_ops, sync as sync_ops,
     },
 };
 
@@ -253,15 +253,15 @@ pub fn list(ctx: &RepoContext) -> &[Item] {
 }
 
 pub fn status(ctx: &RepoContext) -> Result<Vec<ItemStatus>> {
-    let link = DefaultLinkStrategy;
+    let materializer = DefaultMaterializer::new(ctx.repo_root.clone(), ctx.repo_store.clone());
     let ignore = GitInfoExclude;
-    status_ops::status(ctx, &link, &ignore)
+    status_ops::status(ctx, &materializer, &ignore)
 }
 
 pub fn status_v2(ctx: &RepoContext, options: StatusOptions) -> Result<Vec<ItemStatusV2>> {
-    let link = DefaultLinkStrategy;
+    let materializer = DefaultMaterializer::new(ctx.repo_root.clone(), ctx.repo_store.clone());
     let ignore = GitInfoExclude;
-    status_ops::status_v2(ctx, &link, &ignore, options)
+    status_ops::status_v2(ctx, &materializer, &ignore, options)
 }
 
 pub fn repair(
@@ -325,9 +325,9 @@ pub fn move_item(
 }
 
 pub fn info(ctx: &RepoContext, abs_path: &Path) -> Result<ItemInfo> {
-    let link = DefaultLinkStrategy;
+    let materializer = DefaultMaterializer::new(ctx.repo_root.clone(), ctx.repo_store.clone());
     let ignore = GitInfoExclude;
-    info_ops::info(ctx, abs_path, &link, &ignore)
+    info_ops::info(ctx, abs_path, &materializer, &ignore)
 }
 
 pub fn info_read_only(read_only: &ReadOnlyRepoContext, abs_path: &Path) -> Result<ItemInfo> {
@@ -335,17 +335,17 @@ pub fn info_read_only(read_only: &ReadOnlyRepoContext, abs_path: &Path) -> Resul
         return info(ctx, abs_path);
     }
 
-    let rel_str = path_ops::repo_relative_string(&read_only.current.repo_root, abs_path)?;
+    let materializer = DefaultMaterializer::new(
+        read_only.current.repo_root.clone(),
+        read_only.config.store.clone(),
+    );
     let ignore = GitInfoExclude;
-    Ok(ItemInfo {
-        path: rel_str.clone(),
-        repo_root: read_only.current.repo_root.clone(),
-        store_path: None,
-        link_target: fs::read_link(abs_path).ok(),
-        symlink_ok: false,
-        tracked: false,
-        in_exclude: ignore.has_entry(&read_only.current.repo_root, &rel_str)?,
-    })
+    info_ops::info_without_manifest(
+        &read_only.current.repo_root,
+        abs_path,
+        &materializer,
+        &ignore,
+    )
 }
 
 #[cfg(test)]

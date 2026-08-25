@@ -245,7 +245,7 @@ fn partial_store_corruption_shows_mixed_status() {
     // Corrupt one store item (simulate partial copy or deletion).
     std::fs::remove_file(ctx.repo_store.join("items/beta.txt")).unwrap();
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert_eq!(
         report.items.len(),
@@ -269,7 +269,7 @@ fn partial_store_corruption_shows_mixed_status() {
     );
 
     // doctor --fix must record CannotFix for the missing item.
-    let fix_report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let fix_report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
     assert!(
         fix_report
             .actions

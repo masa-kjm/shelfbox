@@ -76,11 +76,7 @@ store
   Crate-private compatibility namespace over storage modules
 
 fs, git
-  Filesystem, Git, ignore-file, and symlink adapters. `fs::materializer` and
-  `fs::canonical_transfer` are crate-private operation-facing ports. The legacy
-  `fs::LinkStrategy` trait remains the transitional boundary used by `ops/`.
-  `fs::DefaultLinkStrategy` is the concrete, platform-aware adapter selected at
-  the API/composition root rather than being constructed inside `ops/`.
+  Filesystem, Git, ignore-file, and symlink adapters. `fs::materializer` and `fs::canonical_transfer` are crate-private operation-facing ports. `status`, `integrity`, and `info` receive `Materializer` for all repository-entry inspection. `fs::LinkStrategy` remains only for the transitional `move_item` and `relink` operation signatures; its platform adapter stays behind the API/composition root.
 
 fs/platform
   Private no-follow, identity, link-count, atomic-replacement, and durability
@@ -97,19 +93,14 @@ public exports.
 ```text
 shelfbox::commands
   -> shelfbox_core::api
-    -> fs::DefaultLinkStrategy
+    -> fs::materializer / fs::DefaultLinkStrategy (legacy only)
     -> ops
       -> policy
       -> storage/store
-      -> fs::materializer / fs::canonical_transfer / fs::LinkStrategy / git
+      -> fs::materializer / fs::canonical_transfer / fs::LinkStrategy (legacy only) / git
         -> fs::symlink / secure transfer / platform adapters
     -> domain / plan / error
 ```
 
-Policy code should not perform I/O. Storage code should not own command
-semantics. CLI code should not decide core safety rules. Operations orchestrate
-typed actions and durable phases but do not construct concrete adapters or use
-platform, symlink, or secure-transfer helpers directly. `LinkStrategy` remains
-an operation-facing legacy trait, while `DefaultLinkStrategy` is the API-owned
-composition root that selects the concrete platform adapter. This keeps behavior
-testable and keeps public API changes intentional.
+Policy code should not perform I/O. Storage code should not own command semantics. CLI code should not decide core safety rules. Operations that have crossed the port boundary orchestrate typed actions and durable phases without using platform, symlink, or secure-transfer helpers directly. `LinkStrategy` is limited to the two remaining legacy operations, while `DefaultLinkStrategy` is selected at the API composition root for their compatibility entry points.
+This keeps behavior testable and keeps public API changes intentional.

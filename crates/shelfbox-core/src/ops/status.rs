@@ -9,10 +9,9 @@ use crate::{
     },
     error::Result,
     fs::materializer::{
-        DefaultMaterializer, InspectionPurpose, MaterializationInspectionRequest,
-        MaterializationLocation, Materializer, RepoEntryKind as FsRepoEntryKind,
+        InspectionPurpose, MaterializationInspectionRequest, MaterializationLocation, Materializer,
+        RepoEntryKind as FsRepoEntryKind,
     },
-    fs::LinkStrategy,
     git,
     git::exclude::IgnoreBackend,
     policy::materialization_policy::evaluate_materialization_status,
@@ -122,19 +121,14 @@ pub struct ItemStatusV2 {
 /// currently in the manifest.
 pub fn status(
     ctx: &RepoContext,
-    link: &dyn LinkStrategy,
+    materializer: &dyn Materializer,
     ignore: &dyn IgnoreBackend,
 ) -> Result<Vec<ItemStatus>> {
-    let materializer = DefaultMaterializer::with_link_strategy(
-        ctx.repo_root.clone(),
-        ctx.repo_store.clone(),
-        link,
-    );
     ctx.manifest
         .items
         .iter()
         .map(|item| {
-            check_item_facts(ctx, item, &materializer, ignore).map(|facts| facts.to_legacy())
+            check_item_facts(ctx, item, materializer, ignore).map(|facts| facts.to_legacy())
         })
         .collect()
 }
@@ -142,16 +136,11 @@ pub fn status(
 /// Returns schema-v2 status DTOs for copy-aware callers.
 pub fn status_v2(
     ctx: &RepoContext,
-    link: &dyn LinkStrategy,
+    materializer: &dyn Materializer,
     ignore: &dyn IgnoreBackend,
     options: StatusOptions,
 ) -> Result<Vec<ItemStatusV2>> {
-    let materializer = DefaultMaterializer::with_link_strategy(
-        ctx.repo_root.clone(),
-        ctx.repo_store.clone(),
-        link,
-    );
-    status_v2_with_materializer(ctx, &materializer, ignore, options)
+    status_v2_with_materializer(ctx, materializer, ignore, options)
 }
 
 /// Evaluates schema-v2 status with an operation-facing materializer port.

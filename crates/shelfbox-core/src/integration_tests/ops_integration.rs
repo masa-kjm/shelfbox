@@ -13,7 +13,7 @@ use std::{
 use tempfile::TempDir;
 
 use shelfbox_core::{
-    context,
+    api, context,
     domain::{
         materialization::MaterializationStrategy, operation_record::OperationPhase,
         ownership::OwnershipState,
@@ -117,6 +117,13 @@ fn add_and_restore_file() {
     let store_path = ctx.repo_store.join("items/secret.txt");
     assert!(store_path.exists(), "store-side file must exist");
 
+    let info = api::item::info(&ctx, &file_path).unwrap();
+    assert_eq!(info.link_target.as_deref(), Some(store_path.as_path()));
+    assert!(
+        info.symlink_ok,
+        "item info must recognize the managed symlink"
+    );
+
     // Manifest must reflect the addition.
     assert_eq!(ctx.manifest.items.len(), 1);
     assert_eq!(ctx.manifest.items[0].path, "secret.txt");
@@ -127,7 +134,7 @@ fn add_and_restore_file() {
     assert_eq!(items[0].path, "secret.txt");
 
     // --- status: everything should be healthy ---
-    let statuses = ops::status::status(&ctx, &link, &ignore).unwrap();
+    let statuses = ops::status::status(&ctx, &common::materializer(&ctx), &ignore).unwrap();
     assert_eq!(statuses.len(), 1);
     assert!(statuses[0].ok, "status should be ok after add");
 
@@ -2374,7 +2381,7 @@ fn doctor_finds_orphan_store_item() {
     let orphan_path = ctx.items_dir().join("orphan_injected.txt");
     std::fs::write(&orphan_path, "orphan").unwrap();
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert_eq!(report.items.len(), 1);
     assert!(report.items[0].ok, "managed item must be reported as ok");
@@ -2388,10 +2395,9 @@ fn doctor_empty_repo_is_clean() {
     let store_dir = TempDir::new().unwrap();
 
     let ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert!(report.items.is_empty());
     assert!(report.orphan_store_items.is_empty());
@@ -2492,7 +2498,7 @@ fn doctor_reports_error_for_dangling_symlink() {
     let store_path = ctx.repo_store.join("items/secrets.txt");
     std::fs::remove_file(&store_path).unwrap();
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert_eq!(report.items.len(), 1);
     let s = &report.items[0];
@@ -2523,7 +2529,7 @@ fn doctor_reports_warn_for_missing_exclude_entry() {
         .remove_entries(repo_dir.path(), &["private.txt"])
         .unwrap();
 
-    let report = ops::integrity::check(&ctx, &link, &ignore).unwrap();
+    let report = ops::integrity::check(&ctx, &common::materializer(&ctx), &ignore).unwrap();
 
     assert_eq!(report.items.len(), 1);
     let s = &report.items[0];
@@ -3602,7 +3608,7 @@ fn doctor_fix_repairs_missing_exclude_entry() {
         "exclude entry must be absent before fix"
     );
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     // At least one Fixed action must be present.
     assert!(
@@ -3642,7 +3648,7 @@ fn doctor_fix_repairs_missing_symlink() {
     // Remove the symlink to simulate the broken state.
     std::fs::remove_file(&file_path).unwrap();
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     assert!(
         report
@@ -3682,7 +3688,7 @@ fn doctor_fix_records_cannot_fix_for_store_missing() {
     // Delete the store-side copy to simulate data loss.
     std::fs::remove_file(ctx.repo_store.join("items/lost.txt")).unwrap();
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     assert!(
         report
@@ -3708,7 +3714,6 @@ fn doctor_fix_true_orphan_is_reported_without_deletion() {
     let store_dir = TempDir::new().unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     // Inject a bare orphan: store item exists but no symlink in the repo.
@@ -3716,7 +3721,7 @@ fn doctor_fix_true_orphan_is_reported_without_deletion() {
     std::fs::create_dir_all(ctx.items_dir()).unwrap();
     std::fs::write(&orphan_path, "orphan").unwrap();
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     assert!(
         report
@@ -3748,14 +3753,13 @@ fn doctor_fix_true_orphan_not_deleted_with_yes() {
     let store_dir = TempDir::new().unwrap();
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
 
     let orphan_path = ctx.items_dir().join("bare_orphan_yes.txt");
     std::fs::create_dir_all(ctx.items_dir()).unwrap();
     std::fs::write(&orphan_path, "orphan").unwrap();
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     assert!(
         report
@@ -3800,7 +3804,7 @@ fn doctor_fix_dry_run_makes_no_changes() {
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
 
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, true).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, true).unwrap();
 
     // dry-run must report what it would do.
     assert!(
@@ -3858,9 +3862,8 @@ fn doctor_fix_rebuilds_manifest_when_missing() {
         0,
         "manifest must be empty after deletion"
     );
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     // A Fixed action must be present for the rebuild.
     assert!(
@@ -3917,12 +3920,11 @@ fn doctor_fix_rebuilt_manifest_produces_healthy_status() {
 
     // doctor --fix --yes should rebuild the manifest (symlink exists → rebuild candidate).
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     // Status must be healthy.
-    let statuses = ops::status::status(&ctx, &link, &ignore).unwrap();
+    let statuses = ops::status::status(&ctx, &common::materializer(&ctx), &ignore).unwrap();
     assert_eq!(statuses.len(), 1);
     assert!(
         statuses[0].link_valid,
@@ -3965,9 +3967,8 @@ fn doctor_fix_rebuilds_only_missing_items_when_partial() {
         1,
         "only partial_a should be in manifest before fix"
     );
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     assert_eq!(
         ctx.manifest.items.len(),
@@ -4019,9 +4020,8 @@ fn doctor_fix_mixed_rebuild_candidate_and_true_orphan() {
     let orphan_path = ctx.items_dir().join("bare_mixed_orphan.txt");
     std::fs::write(&orphan_path, "orphan").unwrap();
 
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, false, false).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, false, false).unwrap();
 
     // Neither item must be absorbed into the manifest without --yes.
     assert!(
@@ -4087,12 +4087,11 @@ fn doctor_fix_rebuild_dry_run_does_not_persist() {
     }; // write lock released here
 
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
     let repo_before = common::snapshot_tree(repo_dir.path());
     let store_before = common::snapshot_tree(store_dir.path());
     // yes=true so rebuild is attempted; dry_run=true so nothing is written.
-    let report = ops::integrity::fix(&mut ctx, &link, &ignore, true, true).unwrap();
+    let report = ops::integrity::fix(&mut ctx, &ignore, true, true).unwrap();
 
     // Report must still mention the planned action.
     assert!(
@@ -4161,9 +4160,8 @@ fn doctor_fix_wrong_target_symlink_is_not_a_rebuild_candidate() {
     // doctor --fix --yes: the store item has no manifest entry AND no correct
     // symlink, so it must be treated as an orphan, not a rebuild candidate.
     let mut ctx = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let link = DefaultLinkStrategy;
     let ignore = GitInfoExclude;
-    ops::integrity::fix(&mut ctx, &link, &ignore, true, false).unwrap();
+    ops::integrity::fix(&mut ctx, &ignore, true, false).unwrap();
 
     // The item must NOT have been added to the manifest via rebuild.
     assert!(

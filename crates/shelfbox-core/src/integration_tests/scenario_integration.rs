@@ -66,8 +66,12 @@ fn reclone_starts_fresh_while_preserving_old_store() {
     );
 
     // The manifest for the new clone must be empty.
-    let manifest =
-        ops::status::status(&ctx_reclone, &DefaultLinkStrategy, &GitInfoExclude).unwrap();
+    let manifest = ops::status::status(
+        &ctx_reclone,
+        &common::materializer(&ctx_reclone),
+        &GitInfoExclude,
+    )
+    .unwrap();
     assert!(
         manifest.is_empty(),
         "re-cloned repo must start with empty manifest"
@@ -237,8 +241,12 @@ fn repo_rename_creates_new_index_entry_and_preserves_store() {
     );
 
     // The renamed repo has an empty manifest.
-    let manifest =
-        ops::status::status(&ctx_renamed, &DefaultLinkStrategy, &GitInfoExclude).unwrap();
+    let manifest = ops::status::status(
+        &ctx_renamed,
+        &common::materializer(&ctx_renamed),
+        &GitInfoExclude,
+    )
+    .unwrap();
     assert!(
         manifest.is_empty(),
         "renamed repo must start with empty manifest"
@@ -312,7 +320,8 @@ fn concurrent_adds_serialize_via_lock() {
 
     // Both files must appear in the final manifest.
     let ctx_read = context::build_create_or_load(repo_dir.path(), Some(store_dir.path())).unwrap();
-    let manifest = ops::status::status(&ctx_read, &DefaultLinkStrategy, &GitInfoExclude).unwrap();
+    let manifest =
+        ops::status::status(&ctx_read, &common::materializer(&ctx_read), &GitInfoExclude).unwrap();
 
     let names: HashSet<String> = manifest
         .iter()
